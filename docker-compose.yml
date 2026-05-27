@@ -8,6 +8,8 @@ services:
       - "${VITE_PORT:-5173}:5173"
     environment:
       UV_CACHE_DIR: /tmp/uv-cache
+      DB_HOST: postgres
+      DB_PORT: 5432
     volumes:
       - .:/var/www/html
       - node_modules:/var/www/html/node_modules
@@ -27,6 +29,8 @@ services:
     command: php artisan queue:listen --sleep=3 --tries=3 --timeout=90
     environment:
       UV_CACHE_DIR: /tmp/uv-cache
+      DB_HOST: postgres
+      DB_PORT: 5432
     volumes:
       - .:/var/www/html
       - node_modules:/var/www/html/node_modules
