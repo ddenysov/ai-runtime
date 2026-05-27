@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b6cf2efdef09094165c22e5c6c33e6e9",
+    "content-hash": "4023fc68d3da44bc503488cefd25d36a",
     "packages": [
         {
             "name": "brick/math",
@@ -2453,60 +2453,6 @@
                 "source": "https://github.com/nette/utils/tree/v4.1.4"
             },
             "time": "2026-05-11T20:49:54+00:00"
-        },
-        {
-            "name": "neuron-core/a2a",
-            "version": "1.0.0",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/neuron-core/a2a.git",
-                "reference": "00e848b24f46e494cbe2521bba43b577f7b6c954"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/neuron-core/a2a/zipball/00e848b24f46e494cbe2521bba43b577f7b6c954",
-                "reference": "00e848b24f46e494cbe2521bba43b577f7b6c954",
-                "shasum": ""
-            },
-            "require": {
-                "php": "^8.1"
-            },
-            "require-dev": {
-                "ext-pdo": "*",
-                "friendsofphp/php-cs-fixer": "^3.75",
-                "laravel/framework": "^12.0",
-                "neuron-core/neuron-ai": "^2.6",
-                "phpstan/phpstan": "^2.1",
-                "phpunit/phpunit": "^9.0",
-                "rector/rector": "^2.0",
-                "tomasvotruba/type-coverage": "^2.0"
-            },
-            "suggest": {
-                "laravel/framework": "^12.0",
-                "neuron-core/neuron-ai": "^2.6"
-            },
-            "type": "library",
-            "autoload": {
-                "psr-4": {
-                    "NeuronCore\\A2A\\": "src/"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Valerio Barbera",
-                    "email": "valerio@inspector.dev"
-                }
-            ],
-            "description": "A2A server.",
-            "support": {
-                "issues": "https://github.com/neuron-core/a2a/issues",
-                "source": "https://github.com/neuron-core/a2a/tree/1.0.0"
-            },
-            "time": "2025-10-21T18:04:43+00:00"
         },
         {
             "name": "neuron-core/neuron-ai",
