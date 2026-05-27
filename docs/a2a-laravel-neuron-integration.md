@@ -522,10 +522,11 @@ $definition = $this->runtimeAgents->findEnabledBySlug($slug);
 
 1. Принять A2A `Task` и входящие `Message[]`.
 2. Извлечь `TextPart` или `DataPart`.
-3. Сохранить входные сообщения в `history`.
-4. Если клиент передал `taskPushNotificationConfig`, сохранить webhook config.
-5. Поставить `ProcessA2ATask` в Laravel Queue.
-6. Сразу вернуть Task со статусом `SUBMITTED` или `WORKING`.
+3. Определить `agent_slug`: из route, skill id, metadata или взять дефолт из `config/runtime-agents.php`.
+4. Сохранить входные сообщения в `history`, а выбранный slug в `metadata.agent_slug`.
+5. Если клиент передал `taskPushNotificationConfig`, сохранить webhook config.
+6. Поставить `ProcessA2ATask` в Laravel Queue.
+7. Сразу вернуть Task со статусом `SUBMITTED` или `WORKING`.
 
 Neuron должен вызываться не внутри HTTP request, а в queue job. Так A2A endpoint быстро отвечает клиенту, а долгие LLM/tool/RAG workflow не держат соединение открытым.
 
@@ -591,7 +592,7 @@ namespace App\Jobs;
 
 use App\A2A\RuntimeAgentPushNotifier;
 use App\A2A\RuntimeAgentTaskRepository;
-use App\Neuron\Agents\RuntimeAgent;
+use App\Neuron\RuntimeAgentFactory;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -615,6 +616,7 @@ class ProcessA2ATask implements ShouldQueue
     public function handle(
         RuntimeAgentTaskRepository $tasks,
         RuntimeAgentPushNotifier $notifier,
+        RuntimeAgentFactory $agents,
     ): void {
         $task = $tasks->find($this->taskId);
 
@@ -629,7 +631,7 @@ class ProcessA2ATask implements ShouldQueue
         try {
             $input = $this->extractText($task->history ?? []);
 
-            $agent = $this->agents->make($task->metadata['agent_slug'] ?? null);
+            $agent = $agents->make($task->metadata['agent_slug'] ?? null);
 
             $response = $agent
                 ->chat(new UserMessage($input))
