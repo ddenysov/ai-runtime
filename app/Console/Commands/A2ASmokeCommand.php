@@ -106,6 +106,7 @@ class A2ASmokeCommand extends Command
         $this->newLine();
         $this->line("A2A task final state: {$task['status']['state']}");
         $this->line("Parent run final state: {$run?->state}");
+        $this->line('Trace command: php artisan a2a:trace '.($run?->id ?? $task['id']));
         $this->line('Child A2A task final state: '.($childTask?->state?->value ?? 'not-created'));
         $remoteTask = $childTask instanceof A2AChildTask
             ? A2ATask::query()->find($childTask->remote_task_id)

@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\A2A\A2AState;
 use App\A2A\A2AInvocationLimitExceeded;
+use App\A2A\A2AState;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
@@ -479,6 +479,77 @@ class A2ARealRuntimeTest extends TestCase
         $this->assertStringContainsString('Guard rejected max_depth: ok', $output);
         $this->assertStringContainsString('Guard rejected max_children_per_run: ok', $output);
         $this->assertStringContainsString('Guard rejected max_total_child_tasks: ok', $output);
+    }
+
+    public function test_trace_command_renders_agent_tool_and_subagent_tree(): void
+    {
+        Queue::fake();
+
+        $rootTask = app(SendMessageAction::class)->handle(
+            agentSlug: 'runtime_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('root prompt'),
+        );
+        $rootRun = AgentRun::query()->findOrFail($rootTask['metadata']['agent_run_id']);
+        $rootRun->update(['state' => 'waiting_for_tool']);
+        AgentChatMessage::query()->create([
+            'thread_id' => "runtime_assistant:{$rootRun->id}",
+            'role' => 'user',
+            'content' => ['text' => 'root prompt'],
+        ]);
+        $toolCall = AgentToolCall::query()->create([
+            'id' => (string) Str::uuid(),
+            'agent_run_id' => $rootRun->id,
+            'tool_name' => 'remote_a2a_agent',
+            'state' => 'completed',
+            'arguments' => [
+                'agent_slug' => 'docs_assistant',
+                'message' => 'docs prompt',
+            ],
+            'result' => [
+                'artifact' => app(TaskPayloadFactory::class)->artifact('docs answer'),
+            ],
+        ]);
+        $childTask = app(SendMessageAction::class)->handle(
+            agentSlug: 'docs_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('docs prompt'),
+            metadata: [
+                'parent_agent_run_id' => $rootRun->id,
+                'parent_tool_call_id' => $toolCall->id,
+            ],
+        );
+        $childRun = AgentRun::query()->findOrFail($childTask['metadata']['agent_run_id']);
+        $childRun->update([
+            'state' => 'completed',
+            'output' => ['message' => 'docs answer'],
+        ]);
+
+        A2AChildTask::query()->create([
+            'agent_run_id' => $rootRun->id,
+            'tool_call_id' => $toolCall->id,
+            'remote_agent_slug' => 'docs_assistant',
+            'remote_task_id' => $childTask['id'],
+            'remote_context_id' => $childTask['contextId'],
+            'state' => A2AState::COMPLETED,
+            'request_payload' => [
+                'message' => 'docs prompt',
+                'a2a_task_id' => $childTask['id'],
+                'child_agent_run_id' => $childRun->id,
+            ],
+        ]);
+
+        $exitCode = Artisan::call('a2a:trace', ['id' => $rootTask['id']]);
+        $output = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('A2A TRACE root='.$rootRun->id, $output);
+        $this->assertStringContainsString('agent runtime_assistant run='.$rootRun->id, $output);
+        $this->assertStringContainsString('input: root prompt', $output);
+        $this->assertStringContainsString('tool remote_a2a_agent call='.$toolCall->id, $output);
+        $this->assertStringContainsString('arg message: docs prompt', $output);
+        $this->assertStringContainsString('child_task=', $output);
+        $this->assertStringContainsString('agent docs_assistant run='.$childRun->id, $output);
+        $this->assertStringContainsString('output: docs answer', $output);
+        $this->assertStringContainsString('tokens=n/a', $output);
     }
 
     private function createRun(string $agentSlug): AgentRun
