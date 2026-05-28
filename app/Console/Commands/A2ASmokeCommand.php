@@ -16,7 +16,7 @@ class A2ASmokeCommand extends Command
     protected $signature = 'a2a:smoke
                             {--agent=runtime_assistant : Agent slug}
                             {--subagent=docs_assistant : Subagent slug}
-                            {--prompt=Use the remote_a2a_agent tool to ask the docs_assistant subagent to say funny joke, then summarize its answer. : User prompt}
+                            {--prompt=Use the remote_a2a_agent tool to ask the docs_assistant subagent to call topic_selector_assistant, choose a topic, and then return a short funny response using that topic. : User prompt}
                             {--timeout=15 : Seconds to wait for an external queue worker}';
 
     protected $description = 'Smoke-test A2A async task processing and local subagent resume flow';

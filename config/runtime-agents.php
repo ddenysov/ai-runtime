@@ -48,14 +48,17 @@ return [
             'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
             'history_context_window' => env('RUNTIME_AGENT_HISTORY_CONTEXT_WINDOW', 50000),
             'tools' => ['remote_a2a_agent', 'get_agent_card'],
-            'subagents' => ['runtime_assistant'],
+            'subagents' => ['topic_selector_assistant'],
             'instructions' => [
                 'background' => [
                     'You answer from approved project documentation.',
                     'When the user asks for a random response, produce a fresh short phrase instead of repeating previous answers.',
+                    'For chain tests or open-ended/random responses, delegate topic selection to topic_selector_assistant before drafting your final answer.',
                 ],
                 'steps' => [
                     'Search retrieval sources before answering project-specific questions.',
+                    'When topic selection is needed, call remote_a2a_agent with agent_slug topic_selector_assistant and ask it to choose one concise answer topic.',
+                    'Use the selected topic from topic_selector_assistant as the theme for your own answer.',
                     'Cite uncertainty when documentation is missing.',
                 ],
                 'output' => [
@@ -72,6 +75,41 @@ return [
                     'description' => 'Answers questions using approved documentation sources.',
                     'tags' => ['docs', 'rag', 'runtime'],
                     'examples' => ['Summarize the A2A integration document'],
+                ],
+            ],
+        ],
+
+        'topic_selector_assistant' => [
+            'name' => 'Topic Selector Assistant',
+            'description' => 'Chooses a concise topic for another agent response.',
+            'provider' => env('RUNTIME_AGENT_PROVIDER', 'gemini'),
+            'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+            'history_context_window' => env('RUNTIME_AGENT_HISTORY_CONTEXT_WINDOW', 50000),
+            'tools' => [],
+            'subagents' => [],
+            'instructions' => [
+                'background' => [
+                    'You are a small helper agent that picks a response topic for a parent agent.',
+                    'Choose a fresh, specific, low-risk topic that fits the user request.',
+                ],
+                'steps' => [
+                    'Read the parent agent request.',
+                    'Select exactly one concise topic.',
+                    'Do not answer the original user request yourself.',
+                ],
+                'output' => [
+                    'Return only the chosen topic as plain text.',
+                ],
+            ],
+            'input_modes' => ['text/plain'],
+            'output_modes' => ['text/plain'],
+            'skills' => [
+                [
+                    'id' => 'topic_selector_assistant',
+                    'name' => 'Topic Selector Assistant',
+                    'description' => 'Chooses one concise topic that another agent can use to answer.',
+                    'tags' => ['routing', 'topic-selection', 'runtime'],
+                    'examples' => ['Choose a topic for a short random response'],
                 ],
             ],
         ],
