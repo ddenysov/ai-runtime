@@ -13,6 +13,7 @@ use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\TaskPayloadFactory;
 use App\Models\A2AChildTask;
 use App\Models\A2ATask;
+use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
 use App\Neuron\RuntimeAgentContext;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Interrupt\WorkflowInterrupt;
+use RuntimeException;
 use Throwable;
 
 class ProcessA2ATask implements ShouldQueue
@@ -61,6 +63,7 @@ class ProcessA2ATask implements ShouldQueue
             $agentSlug = $task['metadata']['agent_slug'] ?? config('runtime-agents.default');
             $run = $this->resolveRun($task, $agentSlug);
             $run->update(['state' => 'working']);
+            $this->injectSmokeFailureIfRequested($task, $agentSlug, $tasks);
 
             $agent = $agents->make($agentSlug, new RuntimeAgentContext(
                 agentSlug: $agentSlug,
@@ -68,7 +71,7 @@ class ProcessA2ATask implements ShouldQueue
                 a2aTaskId: $task['id'],
                 resumeToken: $run->workflow_resume_token,
             ));
-            $messages = ((int) $run->attempts) > 0 ? [] : [new UserMessage($input)];
+            $messages = $this->initialMessages($run, $input);
             $response = $agent->chat(...$messages)->getMessage()->getContent() ?? '';
 
             $agentMessage = $payloads->agentMessage($response);
@@ -173,6 +176,30 @@ class ProcessA2ATask implements ShouldQueue
         }
     }
 
+    private function injectSmokeFailureIfRequested(array &$task, string $agentSlug, RuntimeAgentTaskRepository $tasks): void
+    {
+        $target = $task['metadata']['smoke_fail_once_agent_slug'] ?? null;
+
+        if ($target !== $agentSlug) {
+            return;
+        }
+
+        $injected = $task['metadata']['smoke_fail_once_injected'] ?? [];
+        $injected = is_array($injected) ? $injected : [];
+
+        if (array_key_exists($agentSlug, $injected)) {
+            return;
+        }
+
+        $task['metadata']['smoke_fail_once_injected'] = [
+            ...$injected,
+            $agentSlug => now()->toISOString(),
+        ];
+        $tasks->save($task);
+
+        throw new RuntimeException("Smoke injected temporary network failure for agent [{$agentSlug}].");
+    }
+
     private function retryTask(
         array $task,
         A2AFailure $failure,
@@ -258,6 +285,22 @@ class ProcessA2ATask implements ShouldQueue
         }
 
         return trim(implode("\n", $chunks));
+    }
+
+    /**
+     * If a provider failed after Neuron persisted the user message, retry from
+     * stored history. If the failure happened before chat started, send it now.
+     *
+     * @return UserMessage[]
+     */
+    private function initialMessages(AgentRun $run, string $input): array
+    {
+        $hasPersistedUserMessage = AgentChatMessage::query()
+            ->where('thread_id', "{$run->agent_slug}:{$run->id}")
+            ->where('role', 'user')
+            ->exists();
+
+        return $hasPersistedUserMessage ? [] : [new UserMessage($input)];
     }
 
     private function resolveRun(array $task, string $agentSlug): AgentRun

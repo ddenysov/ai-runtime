@@ -3,6 +3,7 @@
 namespace App\Neuron\Tools;
 
 use App\A2A\A2AState;
+use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
 use App\Models\A2AChildTask;
@@ -74,6 +75,7 @@ class RemoteA2AAgentTool extends Tool
             metadata: [
                 'parent_agent_run_id' => $this->context->agentRunId,
                 'parent_tool_call_id' => $toolCall->id,
+                ...$this->smokeFailureMetadata(),
             ],
         );
 
@@ -104,5 +106,23 @@ class RemoteA2AAgentTool extends Tool
     public function pendingToolCallId(): ?string
     {
         return $this->pendingToolCallId;
+    }
+
+    private function smokeFailureMetadata(): array
+    {
+        if ($this->context->a2aTaskId === null) {
+            return [];
+        }
+
+        $parentTask = app(RuntimeAgentTaskRepository::class)->find($this->context->a2aTaskId);
+        $metadata = $parentTask['metadata'] ?? [];
+
+        return collect($metadata)
+            ->only([
+                'smoke',
+                'smoke_fail_once_agent_slug',
+                'smoke_fail_once_injected',
+            ])
+            ->all();
     }
 }
