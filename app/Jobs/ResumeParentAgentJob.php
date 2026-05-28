@@ -3,6 +3,10 @@
 namespace App\Jobs;
 
 use App\A2A\A2AState;
+use App\A2A\Recovery\A2AErrorClassifier;
+use App\A2A\Recovery\A2AFailure;
+use App\A2A\Recovery\A2AFailureKind;
+use App\A2A\Recovery\A2ARetryPolicy;
 use App\A2A\RuntimeAgentPushNotifier;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\TaskPayloadFactory;
@@ -14,12 +18,14 @@ use App\Neuron\RuntimeAgentFactory;
 use App\Neuron\Tools\RemoteA2AToolResult;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
 use NeuronAI\Workflow\Interrupt\WorkflowInterrupt;
 use Throwable;
 
 class ResumeParentAgentJob implements ShouldQueue
 {
-    use Queueable;
+    use InteractsWithQueue, Queueable;
 
     public function __construct(
         public string $agentRunId,
@@ -34,6 +40,8 @@ class ResumeParentAgentJob implements ShouldQueue
         RuntimeAgentTaskRepository $tasks,
         RuntimeAgentPushNotifier $notifier,
         TaskPayloadFactory $payloads,
+        A2AErrorClassifier $errors,
+        A2ARetryPolicy $retryPolicy,
     ): void {
         $run = AgentRun::query()->find($this->agentRunId);
 
@@ -73,6 +81,10 @@ class ResumeParentAgentJob implements ShouldQueue
 
             $run->update([
                 'state' => 'completed',
+                'last_error_kind' => null,
+                'last_error_message' => null,
+                'next_attempt_at' => null,
+                'failed_at' => null,
                 'output' => [
                     'message' => $message,
                     'tool_call_id' => $toolCall->id,
@@ -95,24 +107,83 @@ class ResumeParentAgentJob implements ShouldQueue
             ]);
             $toolCall->update(['applied_at' => now()]);
         } catch (Throwable $exception) {
-            $this->failA2ATask($run, $tasks, $notifier, $payloads);
+            $failure = $errors->classify($exception);
+
+            if ($this->retryResume($run, $failure, $retryPolicy)) {
+                return;
+            }
+
+            $this->failA2ATask($run, $tasks, $notifier, $payloads, $failure);
             $run->update([
                 'state' => 'failed',
+                'last_error_kind' => $failure->kind->value,
+                'last_error_message' => $failure->message,
+                'next_attempt_at' => null,
+                'failed_at' => now(),
                 'output' => [
                     'tool_call_id' => $toolCall->id,
                     'tool_state' => $toolCall->state,
                     'tool_result' => $toolCall->result,
                     'tool_error' => $toolCall->error,
-                    'error' => $exception->getMessage(),
+                    'tool_error_kind' => $toolCall->error_kind,
+                    'error' => $failure->message,
+                    'error_kind' => $failure->kind->value,
                 ],
             ]);
             $toolCall->update(['applied_at' => now()]);
-            $this->failChildTaskIfNeeded($run, $exception->getMessage());
+            $this->failChildTaskIfNeeded($run, $failure);
+            Log::warning('A2A parent resume reached final failure state.', [
+                'agent_run_id' => $run->id,
+                'tool_call_id' => $toolCall->id,
+                'error_kind' => $failure->kind->value,
+                'error' => $failure->message,
+            ]);
 
             report($exception);
-
-            throw $exception;
         }
+    }
+
+    private function retryResume(AgentRun $run, A2AFailure $failure, A2ARetryPolicy $retryPolicy): bool
+    {
+        $run->refresh();
+
+        if ($run->state !== 'waiting_for_tool') {
+            return true;
+        }
+
+        $attempt = ((int) $run->attempts) + 1;
+
+        if (! $retryPolicy->shouldRetry($failure, $attempt)) {
+            return false;
+        }
+
+        $delay = $retryPolicy->delaySeconds($failure, $attempt);
+        $nextAttemptAt = now()->addSeconds($delay);
+
+        $run->update([
+            'attempts' => $attempt,
+            'last_error_kind' => $failure->kind->value,
+            'last_error_message' => $failure->message,
+            'next_attempt_at' => $nextAttemptAt,
+            'output' => [
+                'recovery' => [
+                    ...$failure->toArray(),
+                    'attempt' => $attempt,
+                    'next_attempt_at' => $nextAttemptAt->toISOString(),
+                ],
+            ],
+        ]);
+
+        $this->release($delay);
+        Log::info('A2A parent resume scheduled for retry.', [
+            'agent_run_id' => $run->id,
+            'error_kind' => $failure->kind->value,
+            'attempt' => $attempt,
+            'delay_seconds' => $delay,
+            'next_attempt_at' => $nextAttemptAt->toISOString(),
+        ]);
+
+        return true;
     }
 
     private function completeA2ATask(
@@ -156,6 +227,7 @@ class ResumeParentAgentJob implements ShouldQueue
         RuntimeAgentTaskRepository $tasks,
         RuntimeAgentPushNotifier $notifier,
         TaskPayloadFactory $payloads,
+        A2AFailure $failure,
     ): void {
         $taskId = $run->input['a2a_task_id'] ?? null;
 
@@ -163,7 +235,7 @@ class ResumeParentAgentJob implements ShouldQueue
             return;
         }
 
-        $failed = $tasks->updateState($task, A2AState::FAILED, $payloads->agentMessage('Task failed while resuming.'));
+        $failed = $tasks->updateState($task, $this->finalStateFor($failure), $payloads->agentMessage($this->finalMessage($failure)));
         $notifier->sendStatusUpdate($failed);
     }
 
@@ -177,7 +249,7 @@ class ResumeParentAgentJob implements ShouldQueue
 
         $childTask = A2AChildTask::query()
             ->where('remote_task_id', $taskId)
-            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED])
+            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED, A2AState::REJECTED])
             ->first();
 
         if ($childTask === null) {
@@ -199,6 +271,10 @@ class ResumeParentAgentJob implements ShouldQueue
 
         $childTask->update([
             'state' => A2AState::COMPLETED,
+            'last_error_kind' => null,
+            'last_error_message' => null,
+            'next_attempt_at' => null,
+            'failed_at' => null,
             'last_notification' => [
                 'kind' => 'artifactUpdate',
                 'taskId' => $childTask->remote_task_id,
@@ -210,7 +286,7 @@ class ResumeParentAgentJob implements ShouldQueue
         self::dispatch($childTask->agent_run_id);
     }
 
-    private function failChildTaskIfNeeded(AgentRun $run, string $error): void
+    private function failChildTaskIfNeeded(AgentRun $run, A2AFailure $failure): void
     {
         $taskId = $run->input['a2a_task_id'] ?? null;
 
@@ -220,7 +296,7 @@ class ResumeParentAgentJob implements ShouldQueue
 
         $childTask = A2AChildTask::query()
             ->where('remote_task_id', $taskId)
-            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED])
+            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED, A2AState::REJECTED])
             ->first();
 
         if ($childTask === null) {
@@ -232,19 +308,46 @@ class ResumeParentAgentJob implements ShouldQueue
             ->where('state', 'waiting')
             ->update([
                 'state' => 'failed',
-                'error' => $error,
+                'result' => ['error' => $failure->toArray()],
+                'error' => $failure->message,
+                'error_kind' => $failure->kind->value,
             ]);
 
         $childTask->update([
-            'state' => A2AState::FAILED,
+            'state' => $this->finalStateFor($failure),
+            'last_error_kind' => $failure->kind->value,
+            'last_error_message' => $failure->message,
+            'next_attempt_at' => null,
+            'failed_at' => now(),
             'last_notification' => [
                 'kind' => 'statusUpdate',
                 'taskId' => $childTask->remote_task_id,
                 'contextId' => $childTask->remote_context_id,
-                'status' => ['state' => A2AState::FAILED->value],
+                'status' => [
+                    'state' => $this->finalStateFor($failure)->value,
+                    'message' => $this->finalMessage($failure),
+                ],
             ],
         ]);
 
         self::dispatch($childTask->agent_run_id);
+    }
+
+    private function finalStateFor(A2AFailure $failure): A2AState
+    {
+        return match ($failure->kind) {
+            A2AFailureKind::CONTENT_POLICY,
+            A2AFailureKind::INVALID_REQUEST,
+            A2AFailureKind::AUTH => A2AState::REJECTED,
+            default => A2AState::FAILED,
+        };
+    }
+
+    private function finalMessage(A2AFailure $failure): string
+    {
+        return match ($this->finalStateFor($failure)) {
+            A2AState::REJECTED => "Task rejected while resuming parent: {$failure->kind->value}.",
+            default => "Task failed while resuming parent after recovery attempts: {$failure->kind->value}.",
+        };
     }
 }

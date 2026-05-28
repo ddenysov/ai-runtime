@@ -18,6 +18,11 @@ class A2AChildTask extends Model
         'state',
         'request_payload',
         'last_notification',
+        'attempts',
+        'last_error_kind',
+        'last_error_message',
+        'next_attempt_at',
+        'failed_at',
     ];
 
     protected function casts(): array
@@ -26,6 +31,8 @@ class A2AChildTask extends Model
             'state' => A2AState::class,
             'request_payload' => 'array',
             'last_notification' => 'array',
+            'next_attempt_at' => 'datetime',
+            'failed_at' => 'datetime',
         ];
     }
 }

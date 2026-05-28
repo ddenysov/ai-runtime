@@ -19,6 +19,11 @@ class AgentRun extends Model
         'workflow_resume_token',
         'conversation_state',
         'resumable_at',
+        'attempts',
+        'last_error_kind',
+        'last_error_message',
+        'next_attempt_at',
+        'failed_at',
     ];
 
     protected function casts(): array
@@ -28,6 +33,8 @@ class AgentRun extends Model
             'output' => 'array',
             'conversation_state' => 'array',
             'resumable_at' => 'datetime',
+            'next_attempt_at' => 'datetime',
+            'failed_at' => 'datetime',
         ];
     }
 }

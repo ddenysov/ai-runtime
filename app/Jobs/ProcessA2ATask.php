@@ -3,16 +3,24 @@
 namespace App\Jobs;
 
 use App\A2A\A2AState;
+use App\A2A\Recovery\A2AErrorClassifier;
+use App\A2A\Recovery\A2AFailure;
+use App\A2A\Recovery\A2AFailureKind;
+use App\A2A\Recovery\A2AFallbackService;
+use App\A2A\Recovery\A2ARetryPolicy;
 use App\A2A\RuntimeAgentPushNotifier;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\TaskPayloadFactory;
 use App\Models\A2AChildTask;
+use App\Models\A2ATask;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
 use App\Neuron\RuntimeAgentContext;
 use App\Neuron\RuntimeAgentFactory;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Workflow\Interrupt\WorkflowInterrupt;
@@ -20,7 +28,7 @@ use Throwable;
 
 class ProcessA2ATask implements ShouldQueue
 {
-    use Queueable;
+    use InteractsWithQueue, Queueable;
 
     public int $tries = 3;
 
@@ -35,6 +43,8 @@ class ProcessA2ATask implements ShouldQueue
         RuntimeAgentPushNotifier $notifier,
         RuntimeAgentFactory $agents,
         TaskPayloadFactory $payloads,
+        A2AErrorClassifier $errors,
+        A2ARetryPolicy $retryPolicy,
     ): void {
         $task = $tasks->find($this->taskId);
 
@@ -58,7 +68,8 @@ class ProcessA2ATask implements ShouldQueue
                 a2aTaskId: $task['id'],
                 resumeToken: $run->workflow_resume_token,
             ));
-            $response = $agent->chat(new UserMessage($input))->getMessage()->getContent() ?? '';
+            $messages = ((int) $run->attempts) > 0 ? [] : [new UserMessage($input)];
+            $response = $agent->chat(...$messages)->getMessage()->getContent() ?? '';
 
             $agentMessage = $payloads->agentMessage($response);
             $artifact = $payloads->artifact($response);
@@ -80,10 +91,22 @@ class ProcessA2ATask implements ShouldQueue
             ];
 
             $tasks->save($completed);
+            A2ATask::query()
+                ->whereKey($task['id'])
+                ->update([
+                    'last_error_kind' => null,
+                    'last_error_message' => null,
+                    'next_attempt_at' => null,
+                    'failed_at' => null,
+                ]);
             $notifier->sendArtifactUpdate($completed, $artifact);
             $notifier->sendStatusUpdate($completed);
             $run->update([
                 'state' => 'completed',
+                'last_error_kind' => null,
+                'last_error_message' => null,
+                'next_attempt_at' => null,
+                'failed_at' => null,
                 'output' => [
                     'message' => $response,
                     'artifact' => $artifact,
@@ -101,21 +124,123 @@ class ProcessA2ATask implements ShouldQueue
                 'resumable_at' => now(),
             ]);
         } catch (Throwable $exception) {
-            $failedMessage = $payloads->agentMessage('Task failed while processing.');
-            $failed = $tasks->updateState($task, A2AState::FAILED, $failedMessage);
-            $notifier->sendStatusUpdate($failed);
+            $failure = $errors->classify($exception);
 
-            $this->resolveRun($task, $task['metadata']['agent_slug'] ?? config('runtime-agents.default'))
+            if ($this->retryTask($task, $failure, $retryPolicy, $tasks, $notifier, $payloads)) {
+                return;
+            }
+
+            $finalState = $this->finalStateFor($failure);
+            $failedMessage = $payloads->agentMessage($this->finalMessage($failure, 'processing'));
+            $latestTask = $tasks->find($this->taskId) ?? $task;
+
+            if (A2AState::isTerminal($latestTask['status']['state'] ?? A2AState::SUBMITTED->value)) {
+                return;
+            }
+
+            $failed = $tasks->updateState($latestTask, $finalState, $failedMessage);
+            $notifier->sendStatusUpdate($failed);
+            A2ATask::query()
+                ->whereKey($this->taskId)
+                ->update([
+                    'last_error_kind' => $failure->kind->value,
+                    'last_error_message' => $failure->message,
+                    'next_attempt_at' => null,
+                    'failed_at' => now(),
+                ]);
+            Log::warning('A2A task reached final failure state.', [
+                'task_id' => $this->taskId,
+                'state' => $finalState->value,
+                'error_kind' => $failure->kind->value,
+                'error' => $failure->message,
+            ]);
+
+            $this->resolveRun($latestTask, $latestTask['metadata']['agent_slug'] ?? config('runtime-agents.default'))
                 ->update([
                     'state' => 'failed',
-                    'output' => ['error' => $exception->getMessage()],
+                    'last_error_kind' => $failure->kind->value,
+                    'last_error_message' => $failure->message,
+                    'next_attempt_at' => null,
+                    'failed_at' => now(),
+                    'output' => [
+                        'error' => $failure->message,
+                        'error_kind' => $failure->kind->value,
+                    ],
                 ]);
-            $this->failChildTaskIfNeeded($task, $exception->getMessage());
+            $this->failChildTaskIfNeeded($latestTask, $failure);
 
             report($exception);
-
-            throw $exception;
         }
+    }
+
+    private function retryTask(
+        array $task,
+        A2AFailure $failure,
+        A2ARetryPolicy $retryPolicy,
+        RuntimeAgentTaskRepository $tasks,
+        RuntimeAgentPushNotifier $notifier,
+        TaskPayloadFactory $payloads,
+    ): bool {
+        $record = A2ATask::query()->find($task['id']);
+
+        if ($record === null) {
+            return false;
+        }
+
+        if ($record->state instanceof A2AState && $record->state->terminal()) {
+            return true;
+        }
+
+        $attempt = ((int) $record->attempts) + 1;
+
+        if (! $retryPolicy->shouldRetry($failure, $attempt)) {
+            return false;
+        }
+
+        $delay = $retryPolicy->delaySeconds($failure, $attempt);
+        $nextAttemptAt = now()->addSeconds($delay);
+        $retryingTask = $tasks->updateState(
+            $record->payload ?? $task,
+            A2AState::WORKING,
+            $payloads->agentMessage("Task retrying after {$failure->kind->value}; attempt {$attempt}."),
+        );
+        $notifier->sendStatusUpdate($retryingTask);
+
+        $record->refresh();
+        $record->update([
+            'attempts' => $attempt,
+            'last_error_kind' => $failure->kind->value,
+            'last_error_message' => $failure->message,
+            'next_attempt_at' => $nextAttemptAt,
+        ]);
+
+        $this->resolveRun($retryingTask, $retryingTask['metadata']['agent_slug'] ?? config('runtime-agents.default'))
+            ->update([
+                'state' => 'working',
+                'attempts' => $attempt,
+                'last_error_kind' => $failure->kind->value,
+                'last_error_message' => $failure->message,
+                'next_attempt_at' => $nextAttemptAt,
+                'output' => [
+                    'recovery' => [
+                        ...$failure->toArray(),
+                        'attempt' => $attempt,
+                        'next_attempt_at' => $nextAttemptAt->toISOString(),
+                    ],
+                ],
+            ]);
+
+        $this->release($delay);
+        Log::info('A2A task scheduled for retry.', [
+            'task_id' => $task['id'],
+            'agent_run_id' => $retryingTask['metadata']['agent_run_id'] ?? null,
+            'error_kind' => $failure->kind->value,
+            'attempt' => $attempt,
+            'delay_seconds' => $delay,
+            'next_attempt_at' => $nextAttemptAt->toISOString(),
+        ]);
+
+        return true;
     }
 
     private function extractText(array $messages): string
@@ -160,7 +285,7 @@ class ProcessA2ATask implements ShouldQueue
     {
         $childTask = A2AChildTask::query()
             ->where('remote_task_id', $task['id'])
-            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED])
+            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED, A2AState::REJECTED])
             ->first();
 
         if ($childTask === null) {
@@ -182,6 +307,10 @@ class ProcessA2ATask implements ShouldQueue
 
         $childTask->update([
             'state' => A2AState::COMPLETED,
+            'last_error_kind' => null,
+            'last_error_message' => null,
+            'next_attempt_at' => null,
+            'failed_at' => null,
             'last_notification' => [
                 'kind' => 'artifactUpdate',
                 'taskId' => $childTask->remote_task_id,
@@ -209,14 +338,25 @@ class ProcessA2ATask implements ShouldQueue
             ]);
     }
 
-    private function failChildTaskIfNeeded(array $task, string $error): void
+    private function failChildTaskIfNeeded(array $task, A2AFailure $failure): void
     {
         $childTask = A2AChildTask::query()
             ->where('remote_task_id', $task['id'])
-            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED])
+            ->whereNotIn('state', [A2AState::COMPLETED, A2AState::FAILED, A2AState::CANCELED, A2AState::REJECTED])
             ->first();
 
         if ($childTask === null) {
+            return;
+        }
+
+        if (app(A2AFallbackService::class)->switchRemoteChildTask($childTask, $failure)) {
+            Log::info('A2A child task switched to fallback subagent.', [
+                'task_id' => $task['id'],
+                'child_task_id' => $childTask->id,
+                'tool_call_id' => $childTask->tool_call_id,
+                'error_kind' => $failure->kind->value,
+            ]);
+
             return;
         }
 
@@ -225,19 +365,46 @@ class ProcessA2ATask implements ShouldQueue
             ->where('state', 'waiting')
             ->update([
                 'state' => 'failed',
-                'error' => $error,
+                'result' => ['error' => $failure->toArray()],
+                'error' => $failure->message,
+                'error_kind' => $failure->kind->value,
             ]);
 
         $childTask->update([
-            'state' => A2AState::FAILED,
+            'state' => $this->finalStateFor($failure),
+            'last_error_kind' => $failure->kind->value,
+            'last_error_message' => $failure->message,
+            'next_attempt_at' => null,
+            'failed_at' => now(),
             'last_notification' => [
                 'kind' => 'statusUpdate',
                 'taskId' => $childTask->remote_task_id,
                 'contextId' => $childTask->remote_context_id,
-                'status' => ['state' => A2AState::FAILED->value],
+                'status' => [
+                    'state' => $this->finalStateFor($failure)->value,
+                    'message' => $this->finalMessage($failure, 'subagent processing'),
+                ],
             ],
         ]);
 
         ResumeParentAgentJob::dispatch($childTask->agent_run_id);
+    }
+
+    private function finalStateFor(A2AFailure $failure): A2AState
+    {
+        return match ($failure->kind) {
+            A2AFailureKind::CONTENT_POLICY,
+            A2AFailureKind::INVALID_REQUEST,
+            A2AFailureKind::AUTH => A2AState::REJECTED,
+            default => A2AState::FAILED,
+        };
+    }
+
+    private function finalMessage(A2AFailure $failure, string $phase): string
+    {
+        return match ($this->finalStateFor($failure)) {
+            A2AState::REJECTED => "Task rejected during {$phase}: {$failure->kind->value}.",
+            default => "Task failed during {$phase} after recovery attempts: {$failure->kind->value}.",
+        };
     }
 }

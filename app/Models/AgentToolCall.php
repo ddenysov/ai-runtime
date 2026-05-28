@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AgentToolCall extends Model
 {
@@ -19,6 +20,7 @@ class AgentToolCall extends Model
         'result',
         'applied_at',
         'error',
+        'error_kind',
     ];
 
     protected function casts(): array
@@ -28,5 +30,10 @@ class AgentToolCall extends Model
             'result' => 'array',
             'applied_at' => 'datetime',
         ];
+    }
+
+    public function run(): BelongsTo
+    {
+        return $this->belongsTo(AgentRun::class, 'agent_run_id');
     }
 }

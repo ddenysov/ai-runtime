@@ -3,11 +3,18 @@
 namespace Tests\Feature;
 
 use App\A2A\A2AState;
+use App\A2A\RuntimeAgentTaskRepository;
+use App\A2A\SendMessageAction;
+use App\A2A\TaskPayloadFactory;
 use App\Jobs\ProcessA2ATask;
+use App\Jobs\ResumeParentAgentJob;
+use App\Models\A2AChildTask;
+use App\Models\A2ATask;
 use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
 use App\Neuron\Nodes\RemoteA2AToolNode;
+use App\Neuron\Providers\EchoProvider;
 use App\Neuron\Providers\RuntimeAiProviderFactory;
 use App\Neuron\RuntimeAgentContext;
 use App\Neuron\RuntimeAgentFactory;
@@ -16,6 +23,7 @@ use App\Neuron\Tools\PendingRemoteA2AToolCall;
 use App\Neuron\Tools\RemoteA2AAgentTool;
 use App\Neuron\Tools\RemoteA2AToolResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -23,12 +31,14 @@ use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Events\AIInferenceEvent;
 use NeuronAI\Agent\Events\ToolCallEvent;
 use NeuronAI\Chat\Messages\AssistantMessage;
+use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Testing\FakeAIProvider;
 use NeuronAI\Workflow\Events\StartEvent;
+use RuntimeException;
 use Tests\TestCase;
 
 class A2ARealRuntimeTest extends TestCase
@@ -178,6 +188,179 @@ class A2ARealRuntimeTest extends TestCase
         $this->assertCount(1, $state->getChatHistory()->getMessages());
     }
 
+    public function test_a2a_task_retries_transient_provider_errors_before_completion(): void
+    {
+        Queue::fake();
+
+        $provider = new SequenceProvider([
+            new RuntimeException('rate limit exceeded', 429),
+            'Recovered response',
+        ]);
+        $this->bindProvider($provider);
+
+        $task = app(SendMessageAction::class)->handle(
+            agentSlug: 'runtime_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('retry me'),
+        );
+        $job = new ProcessA2ATask($task['id']);
+
+        app()->call([$job, 'handle']);
+
+        $record = A2ATask::query()->findOrFail($task['id']);
+        $this->assertSame(A2AState::WORKING, $record->state);
+        $this->assertSame(A2AState::WORKING->value, $record->payload['status']['state']);
+        $this->assertSame(1, $record->attempts);
+        $this->assertSame('rate_limited', $record->last_error_kind);
+        $this->assertNotNull($record->next_attempt_at);
+
+        app()->call([new ProcessA2ATask($task['id']), 'handle']);
+
+        $record->refresh();
+        $this->assertSame(2, $provider->calls);
+        $this->assertSame(A2AState::COMPLETED, $record->state);
+        $this->assertSame('Recovered response', $record->payload['artifacts'][0]['parts'][0]['text']);
+    }
+
+    public function test_content_policy_error_rejects_task_without_retrying(): void
+    {
+        Queue::fake();
+
+        $provider = new SequenceProvider([
+            new RuntimeException('prohibited content blocked by safety policy', 400),
+        ]);
+        $this->bindProvider($provider);
+
+        $task = app(SendMessageAction::class)->handle(
+            agentSlug: 'runtime_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('blocked'),
+        );
+
+        app()->call([new ProcessA2ATask($task['id']), 'handle']);
+
+        $record = A2ATask::query()->findOrFail($task['id']);
+        $run = AgentRun::query()->findOrFail($task['metadata']['agent_run_id']);
+
+        $this->assertSame(A2AState::REJECTED, $record->state);
+        $this->assertSame(0, $record->attempts);
+        $this->assertSame('content_policy', $record->last_error_kind);
+        $this->assertSame('failed', $run->state);
+    }
+
+    public function test_canceled_task_is_not_recovered_or_processed(): void
+    {
+        Queue::fake();
+
+        $provider = new SequenceProvider(['should not run']);
+        $this->bindProvider($provider);
+
+        $task = app(SendMessageAction::class)->handle(
+            agentSlug: 'runtime_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('cancel me'),
+        );
+        app(RuntimeAgentTaskRepository::class)->updateState($task, A2AState::CANCELED);
+
+        app()->call([new ProcessA2ATask($task['id']), 'handle']);
+
+        $this->assertSame(0, $provider->calls);
+        $this->assertSame(A2AState::CANCELED, A2ATask::query()->findOrFail($task['id'])->state);
+    }
+
+    public function test_failed_subagent_can_switch_to_configured_fallback(): void
+    {
+        Queue::fake();
+        config()->set('runtime-agents.recovery.max_attempts.rate_limited', 0);
+        config()->set('runtime-agents.agents.docs_assistant.fallbacks', ['topic_selector_assistant']);
+        config()->set('runtime-agents.agents.docs_assistant.max_fallbacks', 1);
+
+        $this->bindProvider(new SequenceProvider([
+            new RuntimeException('rate limit exceeded', 429),
+        ]));
+
+        $parentRun = $this->createRun('runtime_assistant');
+        $toolCall = AgentToolCall::query()->create([
+            'id' => (string) Str::uuid(),
+            'agent_run_id' => $parentRun->id,
+            'tool_name' => 'remote_a2a_agent',
+            'state' => 'waiting',
+            'arguments' => [
+                'agent_slug' => 'docs_assistant',
+                'message' => 'use docs',
+            ],
+        ]);
+        $task = app(SendMessageAction::class)->handle(
+            agentSlug: 'docs_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('use docs'),
+            metadata: [
+                'parent_agent_run_id' => $parentRun->id,
+                'parent_tool_call_id' => $toolCall->id,
+            ],
+        );
+        $childTask = A2AChildTask::query()->create([
+            'agent_run_id' => $parentRun->id,
+            'tool_call_id' => $toolCall->id,
+            'remote_agent_slug' => 'docs_assistant',
+            'remote_task_id' => $task['id'],
+            'remote_context_id' => $task['contextId'],
+            'state' => A2AState::SUBMITTED,
+            'request_payload' => [
+                'message' => 'use docs',
+                'a2a_task_id' => $task['id'],
+            ],
+        ]);
+
+        app()->call([new ProcessA2ATask($task['id']), 'handle']);
+
+        $childTask->refresh();
+        $toolCall->refresh();
+
+        $this->assertSame('topic_selector_assistant', $childTask->remote_agent_slug);
+        $this->assertSame(A2AState::SUBMITTED, $childTask->state);
+        $this->assertSame('waiting', $toolCall->state);
+        $this->assertDatabaseHas('a2a_tasks', [
+            'id' => $childTask->remote_task_id,
+            'agent_slug' => 'topic_selector_assistant',
+            'state' => A2AState::SUBMITTED->value,
+        ]);
+    }
+
+    public function test_recover_stale_dispatches_ready_work_and_parent_resumes(): void
+    {
+        Queue::fake();
+
+        $task = A2ATask::query()->create([
+            'id' => (string) Str::uuid(),
+            'context_id' => (string) Str::uuid(),
+            'agent_slug' => 'runtime_assistant',
+            'state' => A2AState::WORKING,
+            'payload' => [
+                'id' => 'task-for-recovery',
+                'contextId' => 'context-for-recovery',
+                'status' => ['state' => A2AState::WORKING->value],
+                'metadata' => ['agent_slug' => 'runtime_assistant'],
+            ],
+            'next_attempt_at' => now()->subSecond(),
+        ]);
+        $run = AgentRun::query()->create([
+            'id' => (string) Str::uuid(),
+            'agent_slug' => 'runtime_assistant',
+            'state' => 'waiting_for_tool',
+            'workflow_resume_token' => 'workflow-token',
+            'resumable_at' => now()->subMinutes(10),
+        ]);
+        AgentToolCall::query()->create([
+            'id' => (string) Str::uuid(),
+            'agent_run_id' => $run->id,
+            'tool_name' => 'remote_a2a_agent',
+            'state' => 'failed',
+            'error' => 'subagent failed',
+        ]);
+
+        Artisan::call('a2a:recover-stale', ['--limit' => 10]);
+
+        Queue::assertPushed(ProcessA2ATask::class, fn (ProcessA2ATask $job): bool => $job->taskId === $task->id);
+        Queue::assertPushed(ResumeParentAgentJob::class, fn (ResumeParentAgentJob $job): bool => $job->agentRunId === $run->id);
+    }
+
     private function createRun(string $agentSlug): AgentRun
     {
         return AgentRun::query()->create([
@@ -185,5 +368,40 @@ class A2ARealRuntimeTest extends TestCase
             'agent_slug' => $agentSlug,
             'state' => 'submitted',
         ]);
+    }
+
+    private function bindProvider(AIProviderInterface $provider): void
+    {
+        $this->app->bind(
+            RuntimeAiProviderFactory::class,
+            fn () => new class($provider) implements RuntimeAiProviderFactory
+            {
+                public function __construct(private readonly AIProviderInterface $provider) {}
+
+                public function make(array $definition): AIProviderInterface
+                {
+                    return $this->provider;
+                }
+            },
+        );
+    }
+}
+
+class SequenceProvider extends EchoProvider
+{
+    public int $calls = 0;
+
+    public function __construct(private array $outcomes) {}
+
+    public function chat(Message ...$messages): Message
+    {
+        $this->calls++;
+        $outcome = array_shift($this->outcomes);
+
+        if ($outcome instanceof \Throwable) {
+            throw $outcome;
+        }
+
+        return new AssistantMessage((string) $outcome);
     }
 }

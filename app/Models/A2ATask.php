@@ -19,6 +19,11 @@ class A2ATask extends Model
         'agent_slug',
         'state',
         'payload',
+        'attempts',
+        'last_error_kind',
+        'last_error_message',
+        'next_attempt_at',
+        'failed_at',
     ];
 
     protected function casts(): array
@@ -26,6 +31,8 @@ class A2ATask extends Model
         return [
             'state' => A2AState::class,
             'payload' => 'array',
+            'next_attempt_at' => 'datetime',
+            'failed_at' => 'datetime',
         ];
     }
 }

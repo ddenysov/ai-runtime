@@ -5,6 +5,47 @@ return [
 
     'a2a_token' => env('A2A_TOKEN'),
 
+    'recovery' => [
+        'max_attempts' => [
+            'rate_limited' => 6,
+            'timeout' => 4,
+            'network' => 4,
+            'provider_unavailable' => 4,
+            'quota_exhausted' => 4,
+            'unknown' => 2,
+            'content_policy' => 0,
+            'invalid_request' => 0,
+            'auth' => 0,
+        ],
+        'backoff' => [
+            'base_seconds' => [
+                'rate_limited' => 15,
+                'timeout' => 5,
+                'network' => 5,
+                'provider_unavailable' => 15,
+                'quota_exhausted' => 15,
+                'unknown' => 3,
+            ],
+            'cap_seconds' => [
+                'rate_limited' => 1800,
+                'quota_exhausted' => 1800,
+                'timeout' => 300,
+                'network' => 300,
+                'provider_unavailable' => 300,
+                'unknown' => 300,
+            ],
+        ],
+        'fallback_on' => [
+            'rate_limited',
+            'timeout',
+            'network',
+            'provider_unavailable',
+            'quota_exhausted',
+        ],
+        'stale_after_minutes' => 5,
+        'final_ttl_minutes' => 60,
+    ],
+
     'agents' => [
         'runtime_assistant' => [
             'name' => 'Runtime Assistant',
