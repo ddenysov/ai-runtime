@@ -7,6 +7,7 @@ use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
 use App\Neuron\Nodes\RemoteA2AToolNode;
+use App\Neuron\Providers\RuntimeAiProviderFactory;
 use App\Neuron\RuntimeAgentContext;
 use App\Neuron\RuntimeAgentFactory;
 use App\Neuron\Tools\GetAgentCardTool;
@@ -20,15 +21,48 @@ use InvalidArgumentException;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Events\AIInferenceEvent;
 use NeuronAI\Agent\Events\ToolCallEvent;
+use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Providers\AIProviderInterface;
+use NeuronAI\Testing\FakeAIProvider;
 use NeuronAI\Workflow\Events\StartEvent;
 use Tests\TestCase;
 
 class A2ARealRuntimeTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_runtime_agent_can_use_fake_ai_provider_without_real_llm(): void
+    {
+        $provider = new FakeAIProvider(
+            new AssistantMessage('Fake runtime response'),
+        );
+
+        $this->app->bind(
+            RuntimeAiProviderFactory::class,
+            fn () => new class($provider) implements RuntimeAiProviderFactory
+            {
+                public function __construct(private readonly AIProviderInterface $provider) {}
+
+                public function make(array $definition): AIProviderInterface
+                {
+                    return $this->provider;
+                }
+            },
+        );
+
+        $run = $this->createRun('runtime_assistant');
+
+        $message = app(RuntimeAgentFactory::class)
+            ->make('runtime_assistant', new RuntimeAgentContext('runtime_assistant', $run->id))
+            ->chat(new UserMessage('hello without a real llm'))
+            ->getMessage();
+
+        $this->assertSame('Fake runtime response', $message->getContent());
+        $provider->assertCallCount(1);
+    }
 
     public function test_runtime_agents_persist_history_per_run_thread(): void
     {
