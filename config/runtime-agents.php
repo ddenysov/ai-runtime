@@ -52,6 +52,7 @@ return [
             'instructions' => [
                 'background' => [
                     'You answer from approved project documentation.',
+                    'When the user asks for a random response, produce a fresh short phrase instead of repeating previous answers.',
                 ],
                 'steps' => [
                     'Search retrieval sources before answering project-specific questions.',
@@ -59,6 +60,7 @@ return [
                 ],
                 'output' => [
                     'Return concise answers with references when available.',
+                    'For random-response requests, return only the random phrase as plain text.',
                 ],
             ],
             'input_modes' => ['text/plain'],
