@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\A2A\A2AState;
 use App\Jobs\ProcessA2ATask;
 use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
@@ -132,11 +133,11 @@ class A2ARealRuntimeTest extends TestCase
             'agent_run_id' => $parentRun->id,
             'tool_call_id' => $toolCall->id,
             'remote_agent_slug' => 'docs_assistant',
-            'state' => 'SUBMITTED',
+            'state' => A2AState::SUBMITTED->value,
         ]);
         $this->assertDatabaseHas('a2a_tasks', [
             'agent_slug' => 'docs_assistant',
-            'state' => 'SUBMITTED',
+            'state' => A2AState::SUBMITTED->value,
         ]);
         Queue::assertPushed(ProcessA2ATask::class);
     }

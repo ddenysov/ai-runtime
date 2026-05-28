@@ -2,27 +2,25 @@
 
 namespace App\A2A;
 
-final class A2AState
+enum A2AState: string
 {
-    public const SUBMITTED = 'SUBMITTED';
+    case SUBMITTED = 'SUBMITTED';
+    case WORKING = 'WORKING';
+    case COMPLETED = 'COMPLETED';
+    case FAILED = 'FAILED';
+    case CANCELED = 'CANCELED';
+    case REJECTED = 'REJECTED';
 
-    public const WORKING = 'WORKING';
-
-    public const COMPLETED = 'COMPLETED';
-
-    public const FAILED = 'FAILED';
-
-    public const CANCELED = 'CANCELED';
-
-    public const REJECTED = 'REJECTED';
-
-    public static function isTerminal(string $state): bool
+    public function terminal(): bool
     {
-        return in_array($state, [
-            self::COMPLETED,
-            self::FAILED,
-            self::CANCELED,
-            self::REJECTED,
-        ], true);
+        return match ($this) {
+            self::COMPLETED, self::FAILED, self::CANCELED, self::REJECTED => true,
+            default => false,
+        };
+    }
+
+    public static function isTerminal(self|string $state): bool
+    {
+        return ($state instanceof self ? $state : self::from($state))->terminal();
     }
 }

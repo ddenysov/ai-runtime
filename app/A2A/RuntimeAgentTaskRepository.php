@@ -8,7 +8,9 @@ class RuntimeAgentTaskRepository
 {
     public function save(array $task): array
     {
-        $state = $task['status']['state'] ?? A2AState::SUBMITTED;
+        $rawState = $task['status']['state'] ?? A2AState::SUBMITTED;
+        $state = $rawState instanceof A2AState ? $rawState : A2AState::from($rawState);
+        $task['status']['state'] = $state->value;
         $agentSlug = $task['metadata']['agent_slug'] ?? config('runtime-agents.default');
 
         A2ATask::query()->updateOrCreate(
@@ -40,10 +42,10 @@ class RuntimeAgentTaskRepository
             ->all();
     }
 
-    public function updateState(array $task, string $state, ?array $message = null): array
+    public function updateState(array $task, A2AState $state, ?array $message = null): array
     {
         $task['status'] = [
-            'state' => $state,
+            'state' => $state->value,
             ...($message === null ? [] : ['message' => $message]),
         ];
 

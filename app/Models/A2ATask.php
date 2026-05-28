@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\A2A\A2AState;
 use Illuminate\Database\Eloquent\Model;
 
 class A2ATask extends Model
@@ -23,6 +24,7 @@ class A2ATask extends Model
     protected function casts(): array
     {
         return [
+            'state' => A2AState::class,
             'payload' => 'array',
         ];
     }

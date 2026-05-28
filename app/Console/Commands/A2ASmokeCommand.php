@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\SendMessageAction;
+use App\A2A\A2AState;
 use App\A2A\TaskPayloadFactory;
 use App\Models\A2AChildTask;
 use App\Models\AgentRun;
@@ -64,9 +65,9 @@ class A2ASmokeCommand extends Command
                 ->first();
 
             if (
-                ($task['status']['state'] ?? null) === 'COMPLETED'
+                ($task['status']['state'] ?? null) === A2AState::COMPLETED->value
                 && $run?->state === 'completed'
-                && $childTask?->state === 'COMPLETED'
+                && $childTask?->state === A2AState::COMPLETED
             ) {
                 break;
             }
@@ -75,12 +76,12 @@ class A2ASmokeCommand extends Command
         $this->newLine();
         $this->line("A2A task final state: {$task['status']['state']}");
         $this->line("Parent run final state: {$run?->state}");
-        $this->line('Child A2A task final state: '.($childTask?->state ?? 'not-created'));
+        $this->line('Child A2A task final state: '.($childTask?->state?->value ?? 'not-created'));
 
         if (
-            ($task['status']['state'] ?? null) !== 'COMPLETED'
+            ($task['status']['state'] ?? null) !== A2AState::COMPLETED->value
             || $run?->state !== 'completed'
-            || $childTask?->state !== 'COMPLETED'
+            || $childTask?->state !== A2AState::COMPLETED
         ) {
             $this->error('Smoke test did not complete.');
             $this->warn('Check that the Docker queue-worker service is running and has the latest code.');

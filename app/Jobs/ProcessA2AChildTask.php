@@ -97,7 +97,7 @@ class ProcessA2AChildTask implements ShouldQueue
                     'kind' => 'statusUpdate',
                     'taskId' => $childTask->remote_task_id,
                     'contextId' => $childTask->remote_context_id,
-                    'status' => ['state' => A2AState::FAILED],
+                    'status' => ['state' => A2AState::FAILED->value],
                 ],
             ]);
 
@@ -215,7 +215,7 @@ class ProcessA2AChildTask implements ShouldQueue
                 'kind' => 'statusUpdate',
                 'taskId' => $childTask->remote_task_id,
                 'contextId' => $childTask->remote_context_id,
-                'status' => ['state' => A2AState::FAILED],
+                'status' => ['state' => A2AState::FAILED->value],
             ],
         ]);
 

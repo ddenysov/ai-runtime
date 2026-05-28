@@ -56,7 +56,7 @@ class TaskPayloadFactory
             'id' => $taskId,
             'contextId' => $metadata['contextId'] ?? (string) Str::uuid(),
             'status' => [
-                'state' => A2AState::SUBMITTED,
+                'state' => A2AState::SUBMITTED->value,
             ],
             'history' => [$message],
             'artifacts' => [],

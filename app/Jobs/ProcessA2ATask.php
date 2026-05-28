@@ -66,7 +66,7 @@ class ProcessA2ATask implements ShouldQueue
             $completed = [
                 ...$task,
                 'status' => [
-                    'state' => A2AState::COMPLETED,
+                    'state' => A2AState::COMPLETED->value,
                     'message' => $agentMessage,
                 ],
                 'history' => [
@@ -204,7 +204,7 @@ class ProcessA2ATask implements ShouldQueue
                     'kind' => 'statusUpdate',
                     'taskId' => $task['id'],
                     'contextId' => $task['contextId'] ?? null,
-                    'status' => ['state' => A2AState::WORKING],
+                    'status' => ['state' => A2AState::WORKING->value],
                 ],
             ]);
     }
@@ -234,7 +234,7 @@ class ProcessA2ATask implements ShouldQueue
                 'kind' => 'statusUpdate',
                 'taskId' => $childTask->remote_task_id,
                 'contextId' => $childTask->remote_context_id,
-                'status' => ['state' => A2AState::FAILED],
+                'status' => ['state' => A2AState::FAILED->value],
             ],
         ]);
 
