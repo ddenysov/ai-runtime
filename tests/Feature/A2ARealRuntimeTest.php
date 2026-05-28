@@ -469,6 +469,18 @@ class A2ARealRuntimeTest extends TestCase
         Queue::assertPushed(ResumeParentAgentJob::class, fn (ResumeParentAgentJob $job): bool => $job->agentRunId === $run->id);
     }
 
+    public function test_smoke_command_checks_invocation_guard_limits_without_llm(): void
+    {
+        $exitCode = Artisan::call('a2a:smoke', ['--guard-limits' => true]);
+        $output = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('Guard rejected agent_cycle: ok', $output);
+        $this->assertStringContainsString('Guard rejected max_depth: ok', $output);
+        $this->assertStringContainsString('Guard rejected max_children_per_run: ok', $output);
+        $this->assertStringContainsString('Guard rejected max_total_child_tasks: ok', $output);
+    }
+
     private function createRun(string $agentSlug): AgentRun
     {
         return AgentRun::query()->create([
