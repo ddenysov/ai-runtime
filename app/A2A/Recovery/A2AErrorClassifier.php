@@ -2,6 +2,7 @@
 
 namespace App\A2A\Recovery;
 
+use App\A2A\A2AInvocationLimitExceeded;
 use Throwable;
 
 class A2AErrorClassifier
@@ -13,6 +14,8 @@ class A2AErrorClassifier
         $statusCode = $this->statusCode($exception);
 
         $kind = match (true) {
+            $exception instanceof A2AInvocationLimitExceeded => A2AFailureKind::INVOCATION_LIMIT,
+
             $statusCode === 429,
             str_contains($normalized, 'rate limit'),
             str_contains($normalized, 'too many requests'),

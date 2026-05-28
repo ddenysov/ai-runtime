@@ -3,6 +3,7 @@
 namespace App\A2A\Recovery;
 
 use App\A2A\A2AState;
+use App\A2A\A2AInvocationGuard;
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
 use App\Models\A2AChildTask;
@@ -12,6 +13,7 @@ class A2AFallbackService
     public function __construct(
         private readonly SendMessageAction $sendMessage,
         private readonly TaskPayloadFactory $payloads,
+        private readonly A2AInvocationGuard $invocations,
     ) {}
 
     public function switchRemoteChildTask(A2AChildTask $childTask, A2AFailure $failure): bool
@@ -24,6 +26,10 @@ class A2AFallbackService
         }
 
         $message = (string) ($requestPayload['message'] ?? '');
+        $invocation = $requestPayload['invocation'] ?? null;
+        $invocation = is_array($invocation)
+            ? $this->invocations->forFallback($invocation, $fallbackSlug)
+            : null;
         $task = $this->sendMessage->handle(
             agentSlug: $fallbackSlug,
             message: $this->payloads->userMessage($message),
@@ -33,10 +39,21 @@ class A2AFallbackService
                 'fallback_for_task_id' => $childTask->remote_task_id,
                 'fallback_for_agent_slug' => $childTask->remote_agent_slug,
                 'fallback_error_kind' => $failure->kind->value,
+                ...($invocation === null ? [] : ['invocation' => $invocation]),
             ],
         );
 
-        $this->updateChildTask($childTask, $fallbackSlug, $task['id'], $task['contextId'], $requestPayload, $failure);
+        $this->updateChildTask(
+            childTask: $childTask,
+            fallbackSlug: $fallbackSlug,
+            remoteTaskId: $task['id'],
+            remoteContextId: $task['contextId'],
+            requestPayload: [
+                ...$requestPayload,
+                ...($invocation === null ? [] : ['invocation' => $invocation]),
+            ],
+            failure: $failure,
+        );
 
         return true;
     }
@@ -55,7 +72,7 @@ class A2AFallbackService
             fallbackSlug: $fallbackSlug,
             remoteTaskId: $childTask->remote_task_id,
             remoteContextId: $childTask->remote_context_id,
-            requestPayload: $requestPayload,
+            requestPayload: $this->requestPayloadWithFallbackInvocation($requestPayload, $fallbackSlug),
             failure: $failure,
         );
 
@@ -130,5 +147,19 @@ class A2AFallbackService
                 ],
             ],
         ]);
+    }
+
+    private function requestPayloadWithFallbackInvocation(array $requestPayload, string $fallbackSlug): array
+    {
+        $invocation = $requestPayload['invocation'] ?? null;
+
+        if (! is_array($invocation)) {
+            return $requestPayload;
+        }
+
+        return [
+            ...$requestPayload,
+            'invocation' => $this->invocations->forFallback($invocation, $fallbackSlug),
+        ];
     }
 }

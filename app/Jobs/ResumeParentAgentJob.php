@@ -338,6 +338,7 @@ class ResumeParentAgentJob implements ShouldQueue
         return match ($failure->kind) {
             A2AFailureKind::CONTENT_POLICY,
             A2AFailureKind::INVALID_REQUEST,
+            A2AFailureKind::INVOCATION_LIMIT,
             A2AFailureKind::AUTH => A2AState::REJECTED,
             default => A2AState::FAILED,
         };

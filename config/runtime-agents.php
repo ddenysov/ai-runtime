@@ -12,6 +12,7 @@ return [
             'network' => 4,
             'provider_unavailable' => 4,
             'quota_exhausted' => 4,
+            'invocation_limit' => 0,
             'unknown' => 2,
             'content_policy' => 0,
             'invalid_request' => 0,
@@ -44,6 +45,14 @@ return [
         ],
         'stale_after_minutes' => 5,
         'final_ttl_minutes' => 60,
+    ],
+
+    'invocation_limits' => [
+        'max_depth' => env('A2A_MAX_INVOCATION_DEPTH', 5),
+        'max_total_child_tasks' => env('A2A_MAX_TOTAL_CHILD_TASKS', 25),
+        'max_children_per_run' => env('A2A_MAX_CHILDREN_PER_RUN', 5),
+        'max_agent_revisits_per_path' => env('A2A_MAX_AGENT_REVISITS_PER_PATH', 0),
+        'max_runtime_seconds' => env('A2A_MAX_INVOCATION_RUNTIME_SECONDS', 300),
     ],
 
     'agents' => [

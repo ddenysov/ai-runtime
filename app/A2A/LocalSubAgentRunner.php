@@ -19,6 +19,21 @@ class LocalSubAgentRunner
             'input' => ['prompt' => $prompt],
             'resumable_at' => now(),
         ]);
+        $invocations = app(A2AInvocationGuard::class);
+        $rootInvocation = $invocations->rootInvocation(null, $run->id, $parentAgentSlug);
+        $invocation = $invocations->authorizeFromInvocation(
+            parentInvocation: $rootInvocation,
+            parentTaskId: null,
+            parentAgentRunId: $run->id,
+            parentAgentSlug: $parentAgentSlug,
+            childAgentSlug: $childAgentSlug,
+        );
+        $run->update([
+            'input' => [
+                'prompt' => $prompt,
+                'invocation' => $rootInvocation,
+            ],
+        ]);
 
         $toolCall = AgentToolCall::query()->create([
             'id' => (string) Str::uuid(),
@@ -29,11 +44,13 @@ class LocalSubAgentRunner
                 'agent_slug' => $childAgentSlug,
                 'message' => $prompt,
                 'nested_agent_slug' => $nestedChildAgentSlug,
+                'invocation' => $invocation,
             ],
         ]);
 
         $requestPayload = [
             'message' => $prompt,
+            'invocation' => $invocation,
         ];
 
         if ($nestedChildAgentSlug !== null && $nestedChildAgentSlug !== '') {

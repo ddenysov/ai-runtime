@@ -3,6 +3,7 @@
 namespace App\Neuron\Tools;
 
 use App\A2A\A2AState;
+use App\A2A\A2AInvocationGuard;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
@@ -57,6 +58,15 @@ class RemoteA2AAgentTool extends Tool
             throw new InvalidArgumentException("Subagent [{$agent_slug}] is not allowed.");
         }
 
+        $childRunId = (string) Str::uuid();
+        $invocation = app(A2AInvocationGuard::class)->authorize(
+            parentTaskId: $this->context->a2aTaskId,
+            parentAgentRunId: $this->context->agentRunId,
+            parentAgentSlug: $this->context->agentSlug,
+            childAgentSlug: $agent_slug,
+        );
+        $invocation = app(A2AInvocationGuard::class)->withAgentRun($invocation, $childRunId);
+
         $toolCall = AgentToolCall::query()->create([
             'id' => (string) Str::uuid(),
             'agent_run_id' => $this->context->agentRunId,
@@ -73,8 +83,10 @@ class RemoteA2AAgentTool extends Tool
             agentSlug: $agent_slug,
             message: app(TaskPayloadFactory::class)->userMessage($message),
             metadata: [
+                'agent_run_id' => $childRunId,
                 'parent_agent_run_id' => $this->context->agentRunId,
                 'parent_tool_call_id' => $toolCall->id,
+                'invocation' => $invocation,
                 ...$this->smokeFailureMetadata(),
             ],
         );
@@ -90,6 +102,7 @@ class RemoteA2AAgentTool extends Tool
                 'message' => $message,
                 'a2a_task_id' => $task['id'],
                 'child_agent_run_id' => $task['metadata']['agent_run_id'] ?? null,
+                'invocation' => $task['metadata']['invocation'] ?? $invocation,
             ],
         ]);
 

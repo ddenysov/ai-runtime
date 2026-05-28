@@ -12,6 +12,7 @@ enum A2AFailureKind: string
     case INVALID_REQUEST = 'invalid_request';
     case AUTH = 'auth';
     case QUOTA_EXHAUSTED = 'quota_exhausted';
+    case INVOCATION_LIMIT = 'invocation_limit';
     case UNKNOWN = 'unknown';
 
     public function transient(): bool
@@ -25,7 +26,8 @@ enum A2AFailureKind: string
             self::UNKNOWN => true,
             self::CONTENT_POLICY,
             self::INVALID_REQUEST,
-            self::AUTH => false,
+            self::AUTH,
+            self::INVOCATION_LIMIT => false,
         };
     }
 }

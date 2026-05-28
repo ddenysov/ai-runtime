@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\A2A\A2AState;
+use App\A2A\A2AInvocationLimitExceeded;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
@@ -149,7 +150,114 @@ class A2ARealRuntimeTest extends TestCase
             'agent_slug' => 'docs_assistant',
             'state' => A2AState::SUBMITTED->value,
         ]);
+        $childTask = A2AChildTask::query()->sole();
+        $task = A2ATask::query()->sole();
+        $this->assertSame(1, $childTask->request_payload['invocation']['depth']);
+        $this->assertSame($task->payload['metadata']['invocation'], $childTask->request_payload['invocation']);
+        $this->assertSame(['runtime_assistant', 'docs_assistant'], array_column($childTask->request_payload['invocation']['path'], 'agent_slug'));
         Queue::assertPushed(ProcessA2ATask::class);
+    }
+
+    public function test_remote_a2a_tool_rejects_agent_call_cycles(): void
+    {
+        Queue::fake();
+
+        $rootRun = $this->createRun('runtime_assistant');
+        $rootTask = app(SendMessageAction::class)->handle(
+            agentSlug: 'runtime_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('root'),
+            metadata: ['agent_run_id' => $rootRun->id],
+        );
+        $childTask = app(SendMessageAction::class)->handle(
+            agentSlug: 'docs_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('child'),
+            metadata: [
+                'parent_agent_run_id' => $rootRun->id,
+                'invocation' => [
+                    ...$rootTask['metadata']['invocation'],
+                    'depth' => 1,
+                    'path' => [
+                        ...$rootTask['metadata']['invocation']['path'],
+                        [
+                            'agent_slug' => 'docs_assistant',
+                            'agent_run_id' => 'docs-run',
+                        ],
+                    ],
+                ],
+            ],
+        );
+        $tool = new RemoteA2AAgentTool(
+            context: new RuntimeAgentContext('docs_assistant', $childTask['metadata']['agent_run_id'], $childTask['id']),
+            allowedSubagents: ['runtime_assistant'],
+        );
+
+        $this->expectException(A2AInvocationLimitExceeded::class);
+        $this->expectExceptionMessage('agent_cycle');
+
+        $tool('runtime_assistant', 'call parent again');
+    }
+
+    public function test_remote_a2a_tool_rejects_invocation_depth_over_budget(): void
+    {
+        Queue::fake();
+        config()->set('runtime-agents.invocation_limits.max_depth', 1);
+
+        $rootRun = $this->createRun('runtime_assistant');
+        $rootTask = app(SendMessageAction::class)->handle(
+            agentSlug: 'runtime_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('root'),
+            metadata: ['agent_run_id' => $rootRun->id],
+        );
+        $childTask = app(SendMessageAction::class)->handle(
+            agentSlug: 'docs_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('child'),
+            metadata: [
+                'parent_agent_run_id' => $rootRun->id,
+                'invocation' => [
+                    ...$rootTask['metadata']['invocation'],
+                    'depth' => 1,
+                    'path' => [
+                        ...$rootTask['metadata']['invocation']['path'],
+                        [
+                            'agent_slug' => 'docs_assistant',
+                            'agent_run_id' => 'docs-run',
+                        ],
+                    ],
+                ],
+            ],
+        );
+        $tool = new RemoteA2AAgentTool(
+            context: new RuntimeAgentContext('docs_assistant', $childTask['metadata']['agent_run_id'], $childTask['id']),
+            allowedSubagents: ['topic_selector_assistant'],
+        );
+
+        $this->expectException(A2AInvocationLimitExceeded::class);
+        $this->expectExceptionMessage('max_depth');
+
+        $tool('topic_selector_assistant', 'too deep');
+    }
+
+    public function test_remote_a2a_tool_rejects_total_child_tree_over_budget(): void
+    {
+        Queue::fake();
+        config()->set('runtime-agents.invocation_limits.max_total_child_tasks', 1);
+
+        $parentRun = $this->createRun('runtime_assistant');
+        $tool = new RemoteA2AAgentTool(
+            context: new RuntimeAgentContext('runtime_assistant', $parentRun->id),
+            allowedSubagents: ['docs_assistant'],
+        );
+        $tool->setCallId('call_1');
+
+        try {
+            $tool('docs_assistant', 'first child');
+        } catch (PendingRemoteA2AToolCall) {
+        }
+
+        $this->expectException(A2AInvocationLimitExceeded::class);
+        $this->expectExceptionMessage('max_total_child_tasks');
+
+        $tool('docs_assistant', 'second child');
     }
 
     public function test_remote_a2a_tool_node_converts_resume_payload_to_tool_result(): void

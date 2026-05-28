@@ -12,6 +12,7 @@ class SendMessageAction
         private readonly RuntimeAgentTaskRepository $tasks,
         private readonly RuntimeAgentPushNotificationRepository $pushNotifications,
         private readonly TaskPayloadFactory $payloads,
+        private readonly A2AInvocationGuard $invocations,
     ) {}
 
     public function handle(string $agentSlug, array $message, ?array $configuration = null, array $metadata = []): array
@@ -20,6 +21,15 @@ class SendMessageAction
         $metadata['agent_run_id'] = $runId;
 
         $task = $this->payloads->task($agentSlug, $message, $metadata);
+        $invocation = $metadata['invocation'] ?? null;
+
+        if (! is_array($invocation)) {
+            $invocation = $this->invocations->rootInvocation($task['id'], $runId, $agentSlug);
+        } else {
+            $invocation = $this->invocations->withAgentRun($invocation, $runId);
+        }
+
+        $task['metadata']['invocation'] = $invocation;
 
         AgentRun::query()->firstOrCreate(
             ['id' => $runId],
@@ -31,6 +41,7 @@ class SendMessageAction
                     'message' => $message,
                     'parent_agent_run_id' => $metadata['parent_agent_run_id'] ?? null,
                     'parent_tool_call_id' => $metadata['parent_tool_call_id'] ?? null,
+                    'invocation' => $invocation,
                 ],
             ],
         );

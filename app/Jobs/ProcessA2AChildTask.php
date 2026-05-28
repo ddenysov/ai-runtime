@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\A2A\A2AState;
+use App\A2A\A2AInvocationGuard;
 use App\A2A\Recovery\A2AErrorClassifier;
 use App\A2A\Recovery\A2AFailure;
 use App\A2A\Recovery\A2AFailureKind;
@@ -275,6 +276,24 @@ class ProcessA2AChildTask implements ShouldQueue
             ],
             'resumable_at' => now(),
         ]);
+        $invocations = app(A2AInvocationGuard::class);
+        $parentInvocation = $parentChildTask->request_payload['invocation'] ?? null;
+        $parentInvocation = is_array($parentInvocation)
+            ? $invocations->withAgentRun($parentInvocation, $run->id)
+            : null;
+        $invocation = $invocations->authorizeFromInvocation(
+            parentInvocation: $parentInvocation,
+            parentTaskId: null,
+            parentAgentRunId: $run->id,
+            parentAgentSlug: $parentChildTask->remote_agent_slug,
+            childAgentSlug: $agentSlug,
+        );
+        $run->update([
+            'input' => [
+                ...($run->input ?? []),
+                ...($parentInvocation === null ? [] : ['invocation' => $parentInvocation]),
+            ],
+        ]);
 
         $toolCall = AgentToolCall::query()->create([
             'id' => (string) Str::uuid(),
@@ -284,6 +303,7 @@ class ProcessA2AChildTask implements ShouldQueue
             'arguments' => [
                 'agent_slug' => $agentSlug,
                 'message' => $message,
+                'invocation' => $invocation,
             ],
         ]);
 
@@ -296,6 +316,7 @@ class ProcessA2AChildTask implements ShouldQueue
             'state' => A2AState::SUBMITTED,
             'request_payload' => [
                 'message' => $message,
+                'invocation' => $invocation,
             ],
         ]);
 
@@ -373,6 +394,7 @@ class ProcessA2AChildTask implements ShouldQueue
         return match ($failure->kind) {
             A2AFailureKind::CONTENT_POLICY,
             A2AFailureKind::INVALID_REQUEST,
+            A2AFailureKind::INVOCATION_LIMIT,
             A2AFailureKind::AUTH => A2AState::REJECTED,
             default => A2AState::FAILED,
         };
