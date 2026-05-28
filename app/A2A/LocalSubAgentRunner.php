@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 
 class LocalSubAgentRunner
 {
-    public function start(string $parentAgentSlug, string $childAgentSlug, string $prompt): array
+    public function start(string $parentAgentSlug, string $childAgentSlug, string $prompt, ?string $nestedChildAgentSlug = null): array
     {
         $run = AgentRun::query()->create([
             'id' => (string) Str::uuid(),
@@ -28,8 +28,18 @@ class LocalSubAgentRunner
             'arguments' => [
                 'agent_slug' => $childAgentSlug,
                 'message' => $prompt,
+                'nested_agent_slug' => $nestedChildAgentSlug,
             ],
         ]);
+
+        $requestPayload = [
+            'message' => $prompt,
+        ];
+
+        if ($nestedChildAgentSlug !== null && $nestedChildAgentSlug !== '') {
+            $requestPayload['nested_agent_slug'] = $nestedChildAgentSlug;
+            $requestPayload['nested_message'] = "Nested subagent check for {$childAgentSlug}: {$prompt}";
+        }
 
         $childTask = A2AChildTask::query()->create([
             'agent_run_id' => $run->id,
@@ -38,9 +48,7 @@ class LocalSubAgentRunner
             'remote_task_id' => (string) Str::uuid(),
             'remote_context_id' => (string) Str::uuid(),
             'state' => A2AState::SUBMITTED,
-            'request_payload' => [
-                'message' => $prompt,
-            ],
+            'request_payload' => $requestPayload,
         ]);
 
         ProcessA2AChildTask::dispatch($childTask->id);

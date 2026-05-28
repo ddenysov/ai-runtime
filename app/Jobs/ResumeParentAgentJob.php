@@ -49,6 +49,12 @@ class ResumeParentAgentJob implements ShouldQueue
             ]);
 
             $toolCall->update(['applied_at' => now()]);
+
+            $parentChildTaskId = $run->input['parent_child_task_id'] ?? null;
+
+            if (is_int($parentChildTaskId) || (is_string($parentChildTaskId) && is_numeric($parentChildTaskId))) {
+                ProcessA2AChildTask::dispatch((int) $parentChildTaskId)->afterCommit();
+            }
         });
     }
 }
