@@ -10,7 +10,9 @@ use App\A2A\TaskPayloadFactory;
 use App\Jobs\ProcessA2ATask;
 use App\Jobs\ResumeParentAgentJob;
 use App\Models\A2AChildTask;
+use App\Models\A2ANotificationEvent;
 use App\Models\A2ATask;
+use App\Models\A2ATaskPushNotification;
 use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
@@ -25,6 +27,7 @@ use App\Neuron\Tools\RemoteA2AAgentTool;
 use App\Neuron\Tools\RemoteA2AToolResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -371,6 +374,161 @@ class A2ARealRuntimeTest extends TestCase
 
         $this->assertSame(0, $provider->calls);
         $this->assertSame(A2AState::CANCELED, A2ATask::query()->findOrFail($task['id'])->state);
+    }
+
+    public function test_a2a_task_sends_standard_push_notifications(): void
+    {
+        Queue::fake();
+        Http::fake([
+            'https://client.test/a2a/webhooks/tasks' => Http::response([], 204),
+        ]);
+        $this->bindProvider(new SequenceProvider(['Notification response']));
+
+        $task = app(SendMessageAction::class)->handle(
+            agentSlug: 'runtime_assistant',
+            message: app(TaskPayloadFactory::class)->userMessage('notify me'),
+            configuration: [
+                'taskPushNotificationConfig' => [
+                    'pushNotificationConfig' => [
+                        'url' => 'https://client.test/a2a/webhooks/tasks',
+                        'token' => 'notification-token',
+                        'authentication' => [
+                            'scheme' => 'Bearer',
+                            'credentials' => 'client-token',
+                        ],
+                    ],
+                ],
+            ],
+        );
+
+        app()->call([new ProcessA2ATask($task['id']), 'handle']);
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://client.test/a2a/webhooks/tasks'
+            && $request->hasHeader('Content-Type', 'application/a2a+json')
+            && $request->hasHeader('Authorization', 'Bearer client-token')
+            && $request->hasHeader('X-A2A-Notification-Token', 'notification-token')
+            && isset($request->data()['statusUpdate'])
+            && $request->data()['statusUpdate']['status']['state'] === A2AState::WORKING->value);
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://client.test/a2a/webhooks/tasks'
+            && isset($request->data()['artifactUpdate'])
+            && $request->data()['artifactUpdate']['lastChunk'] === true
+            && $request->data()['artifactUpdate']['artifact']['parts'][0]['text'] === 'Notification response');
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://client.test/a2a/webhooks/tasks'
+            && isset($request->data()['statusUpdate'])
+            && $request->data()['statusUpdate']['status']['state'] === A2AState::COMPLETED->value);
+
+        $pushConfig = A2ATaskPushNotification::query()->sole();
+        $this->assertSame('204', $pushConfig->last_status);
+        $this->assertSame('notification-token', $pushConfig->notification_token);
+    }
+
+    public function test_a2a_notification_receiver_records_and_applies_artifact_update(): void
+    {
+        Queue::fake();
+        config()->set('runtime-agents.a2a_token', 'test-a2a-token');
+
+        $parentRun = $this->createRun('runtime_assistant');
+        $toolCall = AgentToolCall::query()->create([
+            'id' => (string) Str::uuid(),
+            'agent_run_id' => $parentRun->id,
+            'tool_name' => 'remote_a2a_agent',
+            'state' => 'waiting',
+            'arguments' => [
+                'agent_slug' => 'docs_assistant',
+                'message' => 'remote docs',
+            ],
+        ]);
+        $childTask = A2AChildTask::query()->create([
+            'agent_run_id' => $parentRun->id,
+            'tool_call_id' => $toolCall->id,
+            'remote_agent_slug' => 'docs_assistant',
+            'remote_task_id' => 'remote-task-1',
+            'remote_context_id' => 'remote-context-1',
+            'state' => A2AState::WORKING,
+            'request_payload' => [
+                'message' => 'remote docs',
+            ],
+        ]);
+
+        $response = $this->postJson('/api/a2a/notifications', [
+            'artifactUpdate' => [
+                'taskId' => 'remote-task-1',
+                'contextId' => 'remote-context-1',
+                'artifact' => app(TaskPayloadFactory::class)->artifact('Remote answer'),
+                'lastChunk' => true,
+            ],
+        ], [
+            'Authorization' => 'Bearer test-a2a-token',
+            'X-A2A-Notification-Token' => 'notification-token',
+        ]);
+
+        $response->assertAccepted();
+
+        $toolCall->refresh();
+        $childTask->refresh();
+        $event = A2ANotificationEvent::query()->sole();
+
+        $this->assertSame('completed', $toolCall->state);
+        $this->assertSame('Remote answer', $toolCall->result['artifact']['parts'][0]['text']);
+        $this->assertSame(A2AState::COMPLETED, $childTask->state);
+        $this->assertSame('artifactUpdate', $event->kind);
+        $this->assertArrayNotHasKey('authorization', $event->headers);
+        $this->assertNotNull($event->processed_at);
+        Queue::assertPushed(ResumeParentAgentJob::class, fn (ResumeParentAgentJob $job): bool => $job->agentRunId === $parentRun->id);
+    }
+
+    public function test_a2a_notification_receiver_fails_child_task_from_terminal_status(): void
+    {
+        Queue::fake();
+        config()->set('runtime-agents.a2a_token', 'test-a2a-token');
+
+        $parentRun = $this->createRun('runtime_assistant');
+        $toolCall = AgentToolCall::query()->create([
+            'id' => (string) Str::uuid(),
+            'agent_run_id' => $parentRun->id,
+            'tool_name' => 'remote_a2a_agent',
+            'state' => 'waiting',
+            'arguments' => [
+                'agent_slug' => 'docs_assistant',
+                'message' => 'remote docs',
+            ],
+        ]);
+        $childTask = A2AChildTask::query()->create([
+            'agent_run_id' => $parentRun->id,
+            'tool_call_id' => $toolCall->id,
+            'remote_agent_slug' => 'docs_assistant',
+            'remote_task_id' => 'remote-task-2',
+            'remote_context_id' => 'remote-context-2',
+            'state' => A2AState::WORKING,
+            'request_payload' => [
+                'message' => 'remote docs',
+            ],
+        ]);
+
+        $response = $this->postJson('/api/a2a/notifications', [
+            'statusUpdate' => [
+                'taskId' => 'remote-task-2',
+                'contextId' => 'remote-context-2',
+                'status' => [
+                    'state' => A2AState::FAILED->value,
+                    'message' => app(TaskPayloadFactory::class)->agentMessage('Remote failed'),
+                ],
+            ],
+        ], [
+            'Authorization' => 'Bearer test-a2a-token',
+        ]);
+
+        $response->assertAccepted();
+
+        $toolCall->refresh();
+        $childTask->refresh();
+
+        $this->assertSame('failed', $toolCall->state);
+        $this->assertSame('Remote failed', $toolCall->error);
+        $this->assertSame(A2AState::FAILED, $childTask->state);
+        Queue::assertPushed(ResumeParentAgentJob::class, fn (ResumeParentAgentJob $job): bool => $job->agentRunId === $parentRun->id);
     }
 
     public function test_failed_subagent_can_switch_to_configured_fallback(): void

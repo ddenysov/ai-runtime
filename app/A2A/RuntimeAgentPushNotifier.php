@@ -11,20 +11,23 @@ class RuntimeAgentPushNotifier
     public function sendStatusUpdate(array $task): void
     {
         $this->send($task, [
-            'kind' => 'statusUpdate',
-            'taskId' => $task['id'],
-            'contextId' => $task['contextId'],
-            'status' => $task['status'],
+            'statusUpdate' => [
+                'taskId' => $task['id'],
+                'contextId' => $task['contextId'],
+                'status' => $task['status'],
+            ],
         ]);
     }
 
     public function sendArtifactUpdate(array $task, array $artifact): void
     {
         $this->send($task, [
-            'kind' => 'artifactUpdate',
-            'taskId' => $task['id'],
-            'contextId' => $task['contextId'],
-            'artifact' => $artifact,
+            'artifactUpdate' => [
+                'taskId' => $task['id'],
+                'contextId' => $task['contextId'],
+                'artifact' => $artifact,
+                'lastChunk' => true,
+            ],
         ]);
     }
 
@@ -39,11 +42,17 @@ class RuntimeAgentPushNotifier
         }
 
         try {
-            $request = Http::acceptJson();
+            $request = Http::withHeaders([
+                'Content-Type' => 'application/a2a+json',
+            ])->acceptJson();
             $auth = $config->authentication ?? [];
 
             if (($auth['scheme'] ?? null) === 'Bearer' && filled($auth['credentials'] ?? null)) {
                 $request = $request->withToken($auth['credentials']);
+            }
+
+            if (filled($config->notification_token)) {
+                $request = $request->withHeader('X-A2A-Notification-Token', $config->notification_token);
             }
 
             $response = $request->post($config->url, $payload);

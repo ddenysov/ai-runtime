@@ -21,6 +21,7 @@ class RuntimeAgentPushNotificationRepository
             [
                 'url' => $pushConfig['url'],
                 'authentication' => $pushConfig['authentication'] ?? null,
+                'notification_token' => $pushConfig['token'] ?? null,
             ],
         );
     }

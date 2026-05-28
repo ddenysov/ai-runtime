@@ -12,6 +12,7 @@ class A2ATaskPushNotification extends Model
         'a2a_task_id',
         'url',
         'authentication',
+        'notification_token',
         'last_status',
         'last_error',
     ];

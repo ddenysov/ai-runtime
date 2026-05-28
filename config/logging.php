@@ -65,6 +65,13 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'a2a_notifications' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/a2a-notifications.log'),
+            'level' => env('A2A_NOTIFICATION_LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

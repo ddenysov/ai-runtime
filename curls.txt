@@ -1,0 +1,32 @@
+curl -X POST "https://localhost/api/a2a/runtime_assistant" \
+  -H "Authorization: Bearer qwerty" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "test-1",
+    "method": "SendMessage",
+    "params": {
+      "message": {
+        "messageId": "msg-1",
+        "role": "ROLE_USER",
+        "parts": [
+          {
+            "text": "Выполни тестовую задачу и верни короткий ответ",
+            "mediaType": "text/plain"
+          }
+        ]
+      },
+      "configuration": {
+        "taskPushNotificationConfig": {
+          "pushNotificationConfig": {
+            "url": "https://mpe9f2723165d8596f16.free.beeceptor.com",
+            "authentication": {
+              "scheme": "Bearer",
+              "credentials": "qwerty"
+            },
+            "token": "optional-notification-token"
+          }
+        }
+      }
+    }
+  }'
