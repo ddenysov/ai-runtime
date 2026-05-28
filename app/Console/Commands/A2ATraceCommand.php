@@ -11,6 +11,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 class A2ATraceCommand extends Command
 {
@@ -31,8 +32,8 @@ class A2ATraceCommand extends Command
             return SymfonyCommand::FAILURE;
         }
 
-        $this->line("A2A TRACE root={$run->id}");
-        $this->line('All timings use persisted created_at/updated_at timestamps.');
+        $this->line($this->style('A2A TRACE', 'magenta', true).' '.$this->muted("root={$run->id}"));
+        $this->line($this->muted('All timings use persisted created_at/updated_at timestamps.'));
         $this->newLine();
 
         $visited = [];
@@ -65,18 +66,18 @@ class A2ATraceCommand extends Command
         $tokens = $this->formatTokens($this->tokenUsage($run));
 
         $this->line(sprintf(
-            '%sagent %s run=%s state=%s duration=%s attempts=%d tokens=%s',
+            '%s%s %s %s %s %s %s',
             $prefix.$connector,
-            $run->agent_slug,
-            $run->id,
-            $run->state,
-            $this->duration($run->created_at, $run->updated_at),
-            (int) $run->attempts,
-            $tokens,
+            $this->style('agent', 'cyan', true),
+            $this->style($run->agent_slug, 'cyan', true),
+            $this->muted("run={$run->id}"),
+            $this->stateBadge($run->state),
+            $this->muted('duration='.$this->duration($run->created_at, $run->updated_at)),
+            $this->muted("attempts={$run->attempts} tokens={$tokens}"),
         ));
 
         if (isset($visited[$run->id])) {
-            $this->line($childPrefix.'`- cycle: run already rendered');
+            $this->line($childPrefix.'`- '.$this->style('cycle: run already rendered', 'yellow', true));
 
             return;
         }
@@ -107,17 +108,17 @@ class A2ATraceCommand extends Command
         if (is_string($taskId)) {
             $task = A2ATask::query()->find($taskId);
             $state = $task?->state?->value ?? 'missing';
-            $this->line($prefix."|  a2a_task={$taskId} state={$state}");
+            $this->line($prefix.'|  '.$this->muted("a2a_task={$taskId}").' '.$this->stateBadge($state));
         }
 
         $parentRunId = $run->input['parent_agent_run_id'] ?? null;
 
         if (is_string($parentRunId)) {
-            $this->line($prefix."|  parent_run={$parentRunId}");
+            $this->line($prefix.'|  '.$this->muted("parent_run={$parentRunId}"));
         }
 
         if ($run->last_error_kind !== null || $run->last_error_message !== null) {
-            $this->line($prefix.'|  error='.$this->errorText($run->last_error_kind, $run->last_error_message));
+            $this->line($prefix.'|  '.$this->errorLine('error', $run->last_error_kind, $run->last_error_message));
         }
 
         if ((bool) $this->option('no-prompts')) {
@@ -127,7 +128,7 @@ class A2ATraceCommand extends Command
         $prompt = $this->messageText($run->input['message'] ?? $run->input['prompt'] ?? null);
 
         if ($prompt !== '') {
-            $this->line($prefix.'|  input: '.$this->excerpt($prompt));
+            $this->line($prefix.'|  '.$this->muted('input:').' '.$this->excerpt($prompt));
         }
 
         $messages = AgentChatMessage::query()
@@ -143,13 +144,13 @@ class A2ATraceCommand extends Command
             }
 
             $messageTokens = $this->formatTokens($this->tokenUsage($message->meta));
-            $this->line($prefix."|  chat {$message->role} tokens={$messageTokens}: ".$this->excerpt($text));
+            $this->line($prefix.'|  '.$this->style("chat {$message->role}", 'blue').' '.$this->muted("tokens={$messageTokens}:").' '.$this->excerpt($text));
         }
 
         $output = $this->messageText($run->output['message'] ?? $run->output['error'] ?? null);
 
         if ($output !== '') {
-            $this->line($prefix.'|  output: '.$this->excerpt($output));
+            $this->line($prefix.'|  '.$this->muted('output:').' '.$this->style($this->excerpt($output), 'green'));
         }
     }
 
@@ -162,13 +163,13 @@ class A2ATraceCommand extends Command
         $childPrefix = $prefix.($last ? '   ' : '|  ');
 
         $this->line(sprintf(
-            '%stool %s call=%s state=%s duration=%s tokens=%s',
+            '%s%s %s %s %s %s',
             $prefix.$connector,
-            $toolCall->tool_name,
-            $toolCall->id,
-            $toolCall->state,
-            $this->duration($toolCall->created_at, $toolCall->updated_at),
-            $this->formatTokens($this->tokenUsage([$toolCall->arguments, $toolCall->result])),
+            $this->style('tool', 'yellow', true),
+            $this->style($toolCall->tool_name, 'yellow', true),
+            $this->muted("call={$toolCall->id}"),
+            $this->stateBadge($toolCall->state),
+            $this->muted('duration='.$this->duration($toolCall->created_at, $toolCall->updated_at).' tokens='.$this->formatTokens($this->tokenUsage([$toolCall->arguments, $toolCall->result]))),
         ));
 
         if (! (bool) $this->option('no-prompts')) {
@@ -176,7 +177,7 @@ class A2ATraceCommand extends Command
         }
 
         if ($toolCall->error !== null || $toolCall->error_kind !== null) {
-            $this->line($childPrefix.'|  error='.$this->errorText($toolCall->error_kind, $toolCall->error));
+            $this->line($childPrefix.'|  '.$this->errorLine('error', $toolCall->error_kind, $toolCall->error));
         }
 
         $childTask = A2AChildTask::query()
@@ -188,18 +189,19 @@ class A2ATraceCommand extends Command
         }
 
         $this->line(sprintf(
-            '%s|  child_task=%d remote_task=%s remote_agent=%s state=%s duration=%s attempts=%d',
+            '%s|  %s %s %s %s %s %s',
             $childPrefix,
-            $childTask->id,
-            $childTask->remote_task_id,
-            $childTask->remote_agent_slug,
-            $childTask->state->value,
-            $this->duration($childTask->created_at, $childTask->updated_at),
-            (int) $childTask->attempts,
+            $this->style("child_task={$childTask->id}", 'blue', true),
+            $this->muted("remote_task={$childTask->remote_task_id}"),
+            $this->style("remote_agent={$childTask->remote_agent_slug}", 'blue'),
+            $this->stateBadge($childTask->state->value),
+            $this->muted('duration='.$this->duration($childTask->created_at, $childTask->updated_at)),
+            $this->muted("attempts={$childTask->attempts}"),
         ));
 
         if ($childTask->last_error_kind !== null || $childTask->last_error_message !== null) {
-            $this->line($childPrefix.'|  child_error='.$this->errorText(
+            $this->line($childPrefix.'|  '.$this->errorLine(
+                'child_error',
                 $childTask->last_error_kind,
                 $childTask->last_error_message,
             ));
@@ -218,11 +220,11 @@ class A2ATraceCommand extends Command
         $message = $this->messageText($toolCall->arguments['message'] ?? null);
 
         if (is_string($agentSlug)) {
-            $this->line($prefix.'|  arg agent_slug='.$agentSlug);
+            $this->line($prefix.'|  '.$this->muted('arg agent_slug=').$this->style($agentSlug, 'blue'));
         }
 
         if ($message !== '') {
-            $this->line($prefix.'|  arg message: '.$this->excerpt($message));
+            $this->line($prefix.'|  '.$this->muted('arg message:').' '.$this->excerpt($message));
         }
 
         $result = $this->messageText(
@@ -230,7 +232,7 @@ class A2ATraceCommand extends Command
         );
 
         if ($result !== '') {
-            $this->line($prefix.'|  result: '.$this->excerpt($result));
+            $this->line($prefix.'|  '.$this->muted('result:').' '.$this->style($this->excerpt($result), 'green'));
         }
     }
 
@@ -359,5 +361,34 @@ class A2ATraceCommand extends Command
     private function errorText(?string $kind, ?string $message): string
     {
         return trim(($kind ?? 'unknown').($message === null ? '' : " {$message}"));
+    }
+
+    private function stateBadge(string $state): string
+    {
+        $color = match ($state) {
+            'completed' => 'green',
+            'working', 'waiting', 'waiting_for_tool', 'submitted' => 'yellow',
+            'failed', 'rejected', 'canceled' => 'red',
+            default => 'white',
+        };
+
+        return $this->style("state={$state}", $color, true);
+    }
+
+    private function errorLine(string $label, ?string $kind, ?string $message): string
+    {
+        return $this->style("{$label}=".$this->errorText($kind, $message), 'red', true);
+    }
+
+    private function muted(string $text): string
+    {
+        return $this->style($text, 'white');
+    }
+
+    private function style(string $text, string $color, bool $bold = false): string
+    {
+        $options = $bold ? ';options=bold' : '';
+
+        return "<fg={$color}{$options}>".OutputFormatter::escape($text).'</>';
     }
 }
