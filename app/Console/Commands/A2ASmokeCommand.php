@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\A2A\LocalSubAgentRunner;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
@@ -17,8 +16,7 @@ class A2ASmokeCommand extends Command
     protected $signature = 'a2a:smoke
                             {--agent=runtime_assistant : Agent slug}
                             {--subagent=docs_assistant : Subagent slug}
-                            {--nested-subagent=runtime_assistant : Subagent slug called by the first subagent}
-                            {--prompt=Say hello from A2A async smoke test : User prompt}
+                            {--prompt=Use the remote_a2a_agent tool to ask the docs_assistant subagent to say hello from the A2A async smoke test, then summarize its answer. : User prompt}
                             {--timeout=15 : Seconds to wait for an external queue worker}';
 
     protected $description = 'Smoke-test A2A async task processing and local subagent resume flow';
@@ -27,14 +25,16 @@ class A2ASmokeCommand extends Command
         SendMessageAction $sendMessage,
         TaskPayloadFactory $payloads,
         RuntimeAgentTaskRepository $tasks,
-        LocalSubAgentRunner $subAgents,
     ): int {
         $agent = (string) $this->option('agent');
         $subagent = (string) $this->option('subagent');
-        $nestedSubagent = (string) $this->option('nested-subagent');
         $prompt = (string) $this->option('prompt');
 
-        $this->info('Creating A2A task...');
+        if (! str_contains($prompt, $subagent)) {
+            $prompt .= " Use subagent slug {$subagent}.";
+        }
+
+        $this->info('Creating A2A task for real runtime flow...');
 
         $task = $sendMessage->handle(
             agentSlug: $agent,
@@ -43,16 +43,10 @@ class A2ASmokeCommand extends Command
         );
 
         $this->line("A2A task: {$task['id']} state={$task['status']['state']}");
-
-        $this->info('Creating parent run with local A2A subagent call...');
-
-        $subagentFlow = $subAgents->start($agent, $subagent, "Subagent check: {$prompt}", $nestedSubagent);
-        $run = $subagentFlow['run'];
-        $childTask = $subagentFlow['child_task'];
-        $nestedChildTask = null;
+        $run = AgentRun::query()->find($task['metadata']['agent_run_id'] ?? null);
+        $childTask = null;
 
         $this->line("Parent run: {$run->id} state={$run->state}");
-        $this->line("Child A2A task: {$childTask->remote_task_id} state={$childTask->state}");
         $this->line('Queued jobs: '.DB::table('jobs')->count());
 
         $this->info('Waiting for the queue worker to process async jobs...');
@@ -64,17 +58,15 @@ class A2ASmokeCommand extends Command
 
             $task = $tasks->find($task['id']);
             $run = AgentRun::query()->find($run->id);
-            $childTask = A2AChildTask::query()->find($childTask->id);
-            $nestedChildTaskId = $childTask?->request_payload['nested_child_task_id'] ?? null;
-            $nestedChildTask = is_int($nestedChildTaskId) || (is_string($nestedChildTaskId) && is_numeric($nestedChildTaskId))
-                ? A2AChildTask::query()->find((int) $nestedChildTaskId)
-                : null;
+            $childTask = A2AChildTask::query()
+                ->where('agent_run_id', $run?->id)
+                ->latest()
+                ->first();
 
             if (
                 ($task['status']['state'] ?? null) === 'COMPLETED'
                 && $run?->state === 'completed'
                 && $childTask?->state === 'COMPLETED'
-                && ($nestedSubagent === '' || $nestedChildTask?->state === 'COMPLETED')
             ) {
                 break;
             }
@@ -83,14 +75,12 @@ class A2ASmokeCommand extends Command
         $this->newLine();
         $this->line("A2A task final state: {$task['status']['state']}");
         $this->line("Parent run final state: {$run?->state}");
-        $this->line("Child A2A task final state: {$childTask?->state}");
-        $this->line('Nested child A2A task final state: '.($nestedChildTask?->state ?? 'not-created'));
+        $this->line('Child A2A task final state: '.($childTask?->state ?? 'not-created'));
 
         if (
             ($task['status']['state'] ?? null) !== 'COMPLETED'
             || $run?->state !== 'completed'
             || $childTask?->state !== 'COMPLETED'
-            || ($nestedSubagent !== '' && $nestedChildTask?->state !== 'COMPLETED')
         ) {
             $this->error('Smoke test did not complete.');
             $this->warn('Check that the Docker queue-worker service is running and has the latest code.');
@@ -99,13 +89,13 @@ class A2ASmokeCommand extends Command
         }
 
         $artifact = $task['artifacts'][0]['parts'][0]['text'] ?? '';
-        $subagentArtifact = $run->output['tool_result']['artifact']['parts'][0]['text'] ?? '';
-        $nestedArtifact = $run->output['tool_result']['nested']['artifact']['parts'][0]['text'] ?? '';
+        $subagentArtifact = $run->output['tool_result']['artifact']['parts'][0]['text']
+            ?? $run->output['tool_result']['result']['artifact']['parts'][0]['text']
+            ?? '';
 
         $this->info('Smoke test completed.');
         $this->line("A2A artifact: {$artifact}");
         $this->line("Subagent artifact: {$subagentArtifact}");
-        $this->line("Nested subagent artifact: {$nestedArtifact}");
 
         return SymfonyCommand::SUCCESS;
     }

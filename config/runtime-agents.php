@@ -9,8 +9,11 @@ return [
         'runtime_assistant' => [
             'name' => 'Runtime Assistant',
             'description' => 'Answers project-specific runtime questions.',
-            'provider' => env('RUNTIME_AGENT_PROVIDER', 'echo'),
-            'model' => env('OPENAI_MODEL', 'gpt-4.1-mini'),
+            'provider' => env('RUNTIME_AGENT_PROVIDER', 'gemini'),
+            'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+            'history_context_window' => env('RUNTIME_AGENT_HISTORY_CONTEXT_WINDOW', 50000),
+            'tools' => ['remote_a2a_agent', 'get_agent_card'],
+            'subagents' => ['docs_assistant'],
             'instructions' => [
                 'background' => [
                     'You are an A2A-compatible runtime assistant inside a Laravel application.',
@@ -41,8 +44,11 @@ return [
         'docs_assistant' => [
             'name' => 'Docs Assistant',
             'description' => 'Answers questions using approved documentation sources.',
-            'provider' => env('RUNTIME_AGENT_PROVIDER', 'echo'),
-            'model' => env('OPENAI_MODEL', 'gpt-4.1-mini'),
+            'provider' => env('RUNTIME_AGENT_PROVIDER', 'gemini'),
+            'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+            'history_context_window' => env('RUNTIME_AGENT_HISTORY_CONTEXT_WINDOW', 50000),
+            'tools' => ['remote_a2a_agent', 'get_agent_card'],
+            'subagents' => ['runtime_assistant'],
             'instructions' => [
                 'background' => [
                     'You answer from approved project documentation.',
