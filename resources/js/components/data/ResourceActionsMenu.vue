@@ -16,7 +16,7 @@ const emit = defineEmits(['open', 'edit', 'delete']);
     <div class="shrink-0" @click.stop>
         <DropdownMenu>
             <DropdownMenuTrigger as-child>
-                <Button variant="ghost" size="icon-sm" class="rounded-lg text-slate-500">
+                <Button variant="ghost" size="icon-sm" class="app-muted-text rounded-xl">
                     <MoreHorizontalIcon class="size-4" />
                     <span class="sr-only">Actions</span>
                 </Button>

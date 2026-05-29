@@ -10,13 +10,13 @@ defineProps({
 </script>
 
 <template>
-    <div class="flex items-center gap-2 text-sm text-slate-500">
+    <div class="app-muted-text flex items-center gap-2 text-sm">
         <template v-for="(item, index) in items" :key="item">
             <ChevronDownIcon
                 v-if="index > 0"
                 class="size-3 rotate-[-90deg]"
             />
-            <span :class="index === items.length - 1 ? 'font-medium text-slate-700' : undefined">
+            <span :class="index === items.length - 1 ? 'font-medium text-foreground/75' : undefined">
                 {{ item }}
             </span>
         </template>

@@ -29,8 +29,8 @@ defineProps({
 </script>
 
 <template>
-    <Card class="overflow-hidden border-slate-200 bg-white shadow-sm">
-        <CardHeader class="border-b border-slate-100">
+    <Card class="app-surface overflow-hidden">
+        <CardHeader class="app-surface-divider">
             <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                     <div class="flex items-center gap-2">

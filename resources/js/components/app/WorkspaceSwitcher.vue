@@ -29,27 +29,27 @@ const currentWorkspace = computed(
     <DropdownMenu>
         <DropdownMenuTrigger as-child>
             <button
-                class="mb-6 flex h-14 w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                class="app-interactive-muted app-focus-ring mb-6 flex h-14 w-full cursor-pointer items-center justify-between gap-3 rounded-3xl px-3 py-2 text-left"
                 type="button"
             >
                 <span class="flex min-w-0 flex-1 items-center gap-3">
-                    <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/80 text-slate-700 ring-1 ring-slate-200">
+                    <span class="app-icon-surface size-9 shrink-0">
                         <Building2Icon class="size-4" />
                     </span>
                     <span class="min-w-0 flex-1">
-                        <span class="block truncate text-sm font-semibold leading-5 text-slate-950">
+                        <span class="block truncate text-sm font-semibold leading-5 text-foreground">
                             {{ currentWorkspace.label }}
                         </span>
-                        <span class="block truncate text-xs leading-4 text-slate-500">
+                        <span class="app-muted-text block truncate text-xs leading-4">
                             {{ currentWorkspace.plan }} plan · Workspace context
                         </span>
                     </span>
                 </span>
                 <span class="flex shrink-0 items-center gap-2">
-                    <span class="hidden rounded-lg bg-white px-2 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200 xl:inline-flex">
+                    <span class="app-soft-pill hidden px-2 py-1 text-xs font-medium xl:inline-flex">
                         Switch
                     </span>
-                    <ChevronDownIcon class="size-4 text-slate-500" />
+                    <ChevronDownIcon class="app-muted-text size-4" />
                 </span>
             </button>
         </DropdownMenuTrigger>
@@ -63,7 +63,7 @@ const currentWorkspace = computed(
                 <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
                     <div class="min-w-0">
                         <p class="truncate font-medium">{{ workspace.label }}</p>
-                        <p class="text-xs text-slate-500">{{ workspace.plan }} plan</p>
+                        <p class="app-muted-text text-xs">{{ workspace.plan }} plan</p>
                     </div>
                     <CircleCheckIcon
                         v-if="workspace.value === selected"

@@ -23,7 +23,7 @@ const selectedWorkspace = defineModel('workspace', {
 </script>
 
 <template>
-    <main class="min-h-screen bg-slate-50 text-slate-950">
+    <main class="app-page-shell">
         <div class="grid min-h-screen lg:grid-cols-[280px_1fr]">
             <AppSidebar
                 v-model:workspace="selectedWorkspace"

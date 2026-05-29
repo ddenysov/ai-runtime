@@ -25,13 +25,13 @@ defineProps({
 </script>
 
 <template>
-    <Card class="mt-8 border-sky-100 bg-sky-50/70 shadow-none">
+    <Card class="app-accent-surface mt-8">
         <CardHeader class="pb-2">
             <CardTitle class="text-sm">{{ title }}</CardTitle>
             <CardDescription>{{ description }}</CardDescription>
         </CardHeader>
         <CardContent>
-            <Button variant="outline" size="sm" class="w-full bg-white">
+            <Button variant="outline" size="sm" class="app-soft-control w-full">
                 {{ actionLabel }}
             </Button>
         </CardContent>

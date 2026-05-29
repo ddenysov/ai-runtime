@@ -57,7 +57,7 @@ function deleteResource(item) {
             <template #cell-name="{ item }">
                 <div>
                     <p class="font-medium">{{ item.name }}</p>
-                    <p class="text-sm text-slate-500">{{ item.type }} · Updated {{ item.updated }}</p>
+                    <p class="app-muted-text text-sm">{{ item.type }} · Updated {{ item.updated }}</p>
                 </div>
             </template>
 

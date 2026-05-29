@@ -30,7 +30,7 @@ const selectedWorkspace = defineModel('workspace', {
 </script>
 
 <template>
-    <aside class="hidden border-r border-slate-200 bg-white/90 px-4 py-5 lg:block">
+    <aside class="app-sidebar">
         <AppLogo />
         <WorkspaceSwitcher v-model="selectedWorkspace" :workspaces="workspaces" />
         <SidebarNav :items="navigation" />

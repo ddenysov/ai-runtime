@@ -15,12 +15,12 @@ defineProps({
 
 <template>
     <div class="mb-8 flex items-center gap-3 px-2">
-        <div class="flex size-10 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+        <div class="app-primary-mark flex size-10 items-center justify-center rounded-2xl">
             <BotIcon class="size-5" />
         </div>
         <div>
             <p class="text-sm font-semibold">{{ name }}</p>
-            <p class="text-xs text-slate-500">{{ tagline }}</p>
+            <p class="app-muted-text text-xs">{{ tagline }}</p>
         </div>
     </div>
 </template>

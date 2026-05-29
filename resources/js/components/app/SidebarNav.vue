@@ -13,10 +13,10 @@ defineProps({
             v-for="item in items"
             :key="item.label"
             type="button"
-            class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition"
+            class="app-nav-item"
             :class="item.active
-                ? 'bg-slate-950 text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'"
+                ? 'app-nav-item-active'
+                : 'app-nav-item-idle'"
         >
             <component :is="item.icon" class="size-4" />
             {{ item.label }}

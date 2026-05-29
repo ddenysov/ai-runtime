@@ -31,7 +31,7 @@ const emit = defineEmits(['open', 'edit', 'delete']);
     <Card
         role="button"
         tabindex="0"
-        class="cursor-pointer border-slate-200 shadow-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+        class="app-surface app-card-hover app-focus-ring cursor-pointer"
         @click="emit('open')"
         @keydown.enter="emit('open')"
         @keydown.space.prevent="emit('open')"
@@ -53,13 +53,13 @@ const emit = defineEmits(['open', 'edit', 'delete']);
             </div>
         </CardHeader>
         <CardContent class="space-y-4">
-            <div class="grid grid-cols-3 gap-3 rounded-2xl bg-slate-50 p-3 text-sm">
+            <div class="app-surface-muted grid grid-cols-3 gap-3 rounded-3xl p-3 text-sm">
                 <div v-for="stat in stats" :key="stat.key">
-                    <p class="text-slate-500">{{ stat.label }}</p>
+                    <p class="app-muted-text">{{ stat.label }}</p>
                     <p class="font-semibold">{{ item[stat.key] }}</p>
                 </div>
             </div>
-            <p class="text-sm text-slate-500">
+            <p class="app-muted-text text-sm">
                 {{ item.owner }} · {{ item.region }}
             </p>
         </CardContent>

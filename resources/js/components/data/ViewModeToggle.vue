@@ -13,15 +13,15 @@ const options = [
 </script>
 
 <template>
-    <div class="flex h-10 rounded-2xl bg-slate-100 p-1">
+    <div class="app-view-toggle">
         <button
             v-for="option in options"
             :key="option.value"
             type="button"
-            class="inline-flex h-8 items-center gap-2 rounded-xl px-3 text-sm font-medium transition"
+            class="app-view-toggle-item"
             :class="model === option.value
-                ? 'bg-white text-slate-950 shadow-sm'
-                : 'text-slate-500 hover:text-slate-900'"
+                ? 'app-view-toggle-item-active'
+                : 'app-view-toggle-item-idle'"
             @click="model = option.value"
         >
             <component :is="option.icon" class="size-4" />

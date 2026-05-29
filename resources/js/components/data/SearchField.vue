@@ -14,10 +14,10 @@ defineProps({
 
 <template>
     <div class="relative min-w-64">
-        <SearchIcon class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+        <SearchIcon class="app-muted-text pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" />
         <Input
             v-model="model"
-            class="h-10 rounded-2xl pl-9"
+            class="app-soft-control h-10 pl-9"
             :placeholder="placeholder"
         />
     </div>

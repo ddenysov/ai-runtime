@@ -22,13 +22,13 @@ defineProps({
     },
     tone: {
         type: String,
-        default: 'text-slate-600',
+        default: 'app-muted-text',
     },
 });
 </script>
 
 <template>
-    <Card class="border-slate-200 bg-white shadow-sm">
+    <Card class="app-surface">
         <CardHeader class="pb-2">
             <CardDescription>{{ label }}</CardDescription>
             <CardTitle class="text-2xl">{{ value }}</CardTitle>

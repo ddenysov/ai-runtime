@@ -28,18 +28,18 @@ const selectedWorkspace = ref('acme-ai');
             </template>
 
             <template #actions>
-                <Button variant="outline" class="rounded-xl bg-white">
+                <Button variant="outline" class="app-soft-control">
                     Export
                 </Button>
-                <Button class="rounded-xl">
+                <Button class="rounded-2xl">
                     <PlusIcon class="size-4" />
                     New provider
                 </Button>
             </template>
         </PageHeader>
 
-        <div class="space-y-6 px-4 py-6 md:px-8">
-            <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div class="space-y-7 px-5 py-7 md:px-8 md:py-8">
+            <section class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                     v-for="metric in metrics"
                     :key="metric.label"

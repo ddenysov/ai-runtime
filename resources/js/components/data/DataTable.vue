@@ -34,7 +34,7 @@ defineEmits(['row-click']);
     <div class="overflow-x-auto">
         <Table>
             <TableHeader>
-                <TableRow class="bg-slate-50/80">
+                <TableRow class="app-surface-muted">
                     <TableHead
                         v-for="column in columns"
                         :key="column.key"
@@ -50,7 +50,7 @@ defineEmits(['row-click']);
                     v-for="item in items"
                     :key="item[rowKey]"
                     :class="[
-                        'hover:bg-slate-50',
+                        'app-table-row-hover',
                         clickable ? 'cursor-pointer' : undefined,
                     ]"
                     @click="clickable ? $emit('row-click', item) : undefined"
