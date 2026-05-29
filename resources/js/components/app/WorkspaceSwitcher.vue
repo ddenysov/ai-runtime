@@ -29,7 +29,7 @@ const currentWorkspace = computed(
     <DropdownMenu>
         <DropdownMenuTrigger as-child>
             <button
-                class="app-interactive-muted app-focus-ring mb-6 flex h-14 w-full cursor-pointer items-center justify-between gap-3 rounded-3xl px-3 py-2 text-left"
+                class="app-interactive-muted app-focus-ring mb-6 flex h-14 w-full cursor-pointer items-center justify-between gap-3 rounded-app-container px-3 py-2 text-left"
                 type="button"
             >
                 <span class="flex min-w-0 flex-1 items-center gap-3">

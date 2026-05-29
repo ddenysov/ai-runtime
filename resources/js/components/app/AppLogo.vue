@@ -15,7 +15,7 @@ defineProps({
 
 <template>
     <div class="mb-8 flex items-center gap-3 px-2">
-        <div class="app-primary-mark flex size-10 items-center justify-center rounded-2xl">
+        <div class="app-primary-mark flex size-10 items-center justify-center rounded-app-mark">
             <BotIcon class="size-5" />
         </div>
         <div>

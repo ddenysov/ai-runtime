@@ -31,7 +31,7 @@ const selectedWorkspace = ref('acme-ai');
                 <Button variant="outline" class="app-soft-control">
                     Export
                 </Button>
-                <Button class="rounded-2xl">
+                <Button class="rounded-app-control">
                     <PlusIcon class="size-4" />
                     New provider
                 </Button>

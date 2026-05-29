@@ -53,7 +53,7 @@ const emit = defineEmits(['open', 'edit', 'delete']);
             </div>
         </CardHeader>
         <CardContent class="space-y-4">
-            <div class="app-surface-muted grid grid-cols-3 gap-3 rounded-3xl p-3 text-sm">
+            <div class="app-surface-muted grid grid-cols-3 gap-3 rounded-app-container p-3 text-sm">
                 <div v-for="stat in stats" :key="stat.key">
                     <p class="app-muted-text">{{ stat.label }}</p>
                     <p class="font-semibold">{{ item[stat.key] }}</p>

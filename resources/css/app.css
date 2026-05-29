@@ -53,38 +53,55 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
-    --radius-sm: calc(var(--radius) - 4px);
-    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - var(--primitive-radius-delta-sm));
+    --radius-md: calc(var(--radius) - var(--primitive-radius-delta-md));
     --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) + 4px);
+    --radius-xl: calc(var(--radius) + var(--primitive-radius-delta-sm));
+    --radius-2xl: calc(var(--radius) + calc(var(--primitive-radius-delta-sm) * 2));
+    --radius-app-control: var(--app-radius-control);
+    --radius-app-compact: var(--app-radius-compact);
+    --radius-app-container: var(--app-radius-container);
+    --radius-app-mark: var(--app-radius-mark);
 }
 
 :root {
-    --background: oklch(0.982 0.012 95);
-    --foreground: oklch(0.24 0.025 260);
-    --card: oklch(0.996 0.006 95);
+    --background: oklch(0.985 0 0);
+    --foreground: oklch(0.24 0.02 260);
+    --card: oklch(1 0 0);
     --card-foreground: var(--foreground);
-    --popover: oklch(0.996 0.006 95);
+    --popover: oklch(1 0 0);
     --popover-foreground: var(--foreground);
     --primary: oklch(0.48 0.13 260);
-    --primary-foreground: oklch(0.985 0.01 95);
-    --secondary: oklch(0.952 0.018 95);
-    --secondary-foreground: oklch(0.28 0.025 260);
-    --muted: oklch(0.948 0.014 95);
-    --muted-foreground: oklch(0.52 0.035 260);
-    --accent: oklch(0.94 0.035 250);
-    --accent-foreground: oklch(0.28 0.06 260);
+    --primary-foreground: oklch(0.99 0 0);
+    --secondary: oklch(0.965 0 0);
+    --secondary-foreground: oklch(0.28 0.02 260);
+    --muted: oklch(0.955 0 0);
+    --muted-foreground: oklch(0.52 0.02 260);
+    --accent: oklch(0.96 0.015 260);
+    --accent-foreground: oklch(0.28 0.04 260);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.89 0.018 95);
-    --input: oklch(0.89 0.018 95);
+    --border: oklch(0.92 0 0);
+    --input: oklch(0.92 0 0);
     --ring: oklch(0.62 0.12 260);
     --chart-1: oklch(0.65 0.16 260);
     --chart-2: oklch(0.64 0.12 165);
     --chart-3: oklch(0.72 0.14 75);
     --chart-4: oklch(0.66 0.16 25);
     --chart-5: oklch(0.6 0.14 310);
-    --radius: 1rem;
-    --sidebar: oklch(0.992 0.008 95);
+    --primitive-radius-base: 0.5rem;
+    --primitive-radius-delta-sm: 0.125rem;
+    --primitive-radius-delta-md: 0.0625rem;
+    --radius: var(--primitive-radius-base);
+    --app-radius-control: calc(var(--radius) + var(--primitive-radius-delta-sm));
+    --app-radius-compact: var(--radius);
+    --app-radius-container: calc(var(--radius) + calc(var(--primitive-radius-delta-sm) * 2));
+    --app-radius-mark: calc(var(--radius) + var(--primitive-radius-delta-sm));
+    --gradient-white-from: oklch(1 0 0);
+    --gradient-white-via: oklch(0.992 0 0);
+    --gradient-white-to: oklch(0.97 0 0);
+    --gradient-white-muted-from: oklch(0.99 0 0);
+    --gradient-white-muted-to: oklch(0.955 0 0);
+    --sidebar: oklch(1 0 0);
     --sidebar-foreground: var(--foreground);
     --sidebar-primary: var(--primary);
     --sidebar-primary-foreground: var(--primary-foreground);
@@ -140,15 +157,31 @@
 
 @layer components {
     .app-page-shell {
-        @apply min-h-screen bg-background text-foreground;
+        @apply min-h-screen text-foreground;
+        background: linear-gradient(
+            165deg,
+            var(--gradient-white-from) 0%,
+            var(--gradient-white-via) 50%,
+            var(--gradient-white-to) 100%
+        );
     }
 
     .app-sidebar {
-        @apply hidden border-r border-border/70 bg-card/80 px-4 py-5 backdrop-blur lg:block;
+        @apply hidden border-r border-border/70 px-4 py-5 backdrop-blur lg:block;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-from) 0%,
+            var(--gradient-white-via) 100%
+        );
     }
 
     .app-page-header {
-        @apply sticky top-0 z-10 border-b border-border/70 bg-card/80 px-5 py-4 backdrop-blur md:px-8;
+        @apply sticky top-0 z-10 border-b border-border/70 px-5 py-4 backdrop-blur md:px-8;
+        background: linear-gradient(
+            180deg,
+            oklch(1 0 0 / 0.94) 0%,
+            oklch(0.995 0 0 / 0.9) 100%
+        );
     }
 
     .app-page-header-content {
@@ -156,7 +189,12 @@
     }
 
     .app-surface {
-        @apply border-border/70 bg-card/90 shadow-sm shadow-foreground/5;
+        @apply border-border/70 shadow-sm shadow-foreground/5;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-from) 0%,
+            var(--gradient-white-via) 100%
+        );
     }
 
     .app-surface-divider {
@@ -164,23 +202,55 @@
     }
 
     .app-surface-muted {
-        @apply bg-muted/45;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-muted-from) 0%,
+            var(--gradient-white-muted-to) 100%
+        );
     }
 
     .app-accent-surface {
-        @apply border-primary/15 bg-accent/45 shadow-none;
+        @apply border-primary/15 shadow-none;
+        background: linear-gradient(
+            135deg,
+            oklch(0.995 0.008 260) 0%,
+            oklch(0.975 0.015 260) 100%
+        );
     }
 
     .app-interactive-muted {
-        @apply border border-border/70 bg-muted/45 transition hover:bg-muted/70;
+        @apply border border-border/70 transition;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-muted-from) 0%,
+            var(--gradient-white-muted-to) 100%
+        );
+    }
+
+    .app-interactive-muted:hover {
+        background: linear-gradient(
+            180deg,
+            oklch(0.995 0 0) 0%,
+            oklch(0.94 0 0) 100%
+        );
     }
 
     .app-soft-control {
-        @apply rounded-2xl bg-card/80;
+        @apply rounded-app-control;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-from) 0%,
+            var(--gradient-white-via) 100%
+        );
     }
 
     .app-soft-pill {
-        @apply rounded-xl bg-card/80 text-muted-foreground ring-1 ring-border/70;
+        @apply rounded-app-compact text-muted-foreground ring-1 ring-border/70;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-from) 0%,
+            var(--gradient-white-via) 100%
+        );
     }
 
     .app-primary-mark {
@@ -188,7 +258,12 @@
     }
 
     .app-icon-surface {
-        @apply flex items-center justify-center rounded-2xl bg-card/80 text-primary ring-1 ring-border/70;
+        @apply flex items-center justify-center rounded-app-mark text-primary ring-1 ring-border/70;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-from) 0%,
+            var(--gradient-white-via) 100%
+        );
     }
 
     .app-focus-ring {
@@ -196,7 +271,7 @@
     }
 
     .app-nav-item {
-        @apply flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition;
+        @apply flex w-full items-center gap-3 rounded-app-control px-3 py-2.5 text-sm font-medium transition;
     }
 
     .app-nav-item-active {
@@ -204,7 +279,15 @@
     }
 
     .app-nav-item-idle {
-        @apply text-muted-foreground hover:bg-muted/70 hover:text-foreground;
+        @apply text-muted-foreground hover:text-foreground;
+    }
+
+    .app-nav-item-idle:hover {
+        background: linear-gradient(
+            180deg,
+            oklch(0.995 0 0) 0%,
+            oklch(0.94 0 0) 100%
+        );
     }
 
     .app-card-hover {
@@ -212,19 +295,29 @@
     }
 
     .app-table-row-hover {
-        @apply hover:bg-muted/45;
+        @apply hover:bg-muted/30;
     }
 
     .app-view-toggle {
-        @apply flex h-10 rounded-2xl bg-muted/70 p-1;
+        @apply flex h-10 rounded-app-control p-1;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-muted-from) 0%,
+            var(--gradient-white-muted-to) 100%
+        );
     }
 
     .app-view-toggle-item {
-        @apply inline-flex h-8 items-center gap-2 rounded-xl px-3 text-sm font-medium transition;
+        @apply inline-flex h-8 items-center gap-2 rounded-app-compact px-3 text-sm font-medium transition;
     }
 
     .app-view-toggle-item-active {
-        @apply bg-card text-foreground shadow-sm shadow-foreground/5;
+        @apply text-foreground shadow-sm shadow-foreground/5;
+        background: linear-gradient(
+            180deg,
+            var(--gradient-white-from) 0%,
+            var(--gradient-white-via) 100%
+        );
     }
 
     .app-view-toggle-item-idle {
