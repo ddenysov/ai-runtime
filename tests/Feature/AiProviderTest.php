@@ -101,4 +101,47 @@ class AiProviderTest extends TestCase
 
         (new ConfiguredRuntimeAiProviderFactory)->make([]);
     }
+
+    public function test_can_create_ai_provider_via_api(): void
+    {
+        $response = $this->postJson('/api/ai-providers', [
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'description' => 'Primary Gemini account',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+            'is_active' => true,
+        ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('name', 'Work Gemini')
+            ->assertJsonPath('slug', 'work-gemini')
+            ->assertJsonPath('type', 'gemini')
+            ->assertJsonPath('masked_credentials.key', 'gemi******-key')
+            ->assertJsonMissing(['credentials']);
+
+        $this->assertDatabaseHas('ai_providers', [
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_create_ai_provider_api_validates_payload(): void
+    {
+        $response = $this->postJson('/api/ai-providers', [
+            'slug' => 'Invalid Slug',
+            'name' => '',
+            'type' => 'unknown',
+            'credentials' => [],
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['slug', 'name', 'type', 'credentials.key']);
+    }
 }

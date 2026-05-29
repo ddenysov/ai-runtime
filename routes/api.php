@@ -3,7 +3,10 @@
 use App\A2A\Http\A2AJsonRpcController;
 use App\A2A\Http\A2ANotificationController;
 use App\A2A\Http\AgentCardController;
+use App\Http\Controllers\AiProviderController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('/ai-providers', [AiProviderController::class, 'store']);
 
 Route::get('/a2a/{agent}/.well-known/agent-card.json', AgentCardController::class);
 

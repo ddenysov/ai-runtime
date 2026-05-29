@@ -5,6 +5,7 @@ import AppShell from '@/components/app/AppShell.vue';
 import PageBreadcrumbs from '@/components/app/PageBreadcrumbs.vue';
 import PageHeader from '@/components/app/PageHeader.vue';
 import { Button } from '@/components/ui/button';
+import CreateProviderDialog from '@/features/providers/CreateProviderDialog.vue';
 import ProvidersRegistry from '@/features/providers/ProvidersRegistry.vue';
 import {
     navigation,
@@ -12,6 +13,7 @@ import {
 } from '@/features/providers/providers.mock';
 
 const selectedWorkspace = ref('acme-ai');
+const createProviderOpen = ref(false);
 </script>
 
 <template>
@@ -29,7 +31,10 @@ const selectedWorkspace = ref('acme-ai');
                 <Button variant="outline" class="app-soft-control">
                     Export
                 </Button>
-                <Button class="rounded-app-control">
+                <Button
+                    class="rounded-app-control"
+                    @click="createProviderOpen = true"
+                >
                     <PlusIcon class="size-4" />
                     New provider
                 </Button>
@@ -39,5 +44,7 @@ const selectedWorkspace = ref('acme-ai');
         <div class="px-5 py-7 md:px-8 md:py-8">
             <ProvidersRegistry />
         </div>
+
+        <CreateProviderDialog v-model:open="createProviderOpen" />
     </AppShell>
 </template>
