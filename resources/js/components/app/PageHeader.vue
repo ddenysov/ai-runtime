@@ -1,4 +1,7 @@
 <script setup>
+import { BellIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+
 defineProps({
     title: {
         type: String,
@@ -15,7 +18,10 @@ defineProps({
                 <h1 class="mt-1 text-2xl font-semibold tracking-tight">{{ title }}</h1>
             </div>
 
-            <div v-if="$slots.actions" class="flex items-center gap-2">
+            <div class="flex items-center gap-2">
+                <Button variant="outline" size="icon" class="rounded-xl bg-white">
+                    <BellIcon class="size-4" />
+                </Button>
                 <slot name="actions" />
             </div>
         </div>

@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue';
-import { BellIcon, PlusIcon } from '@lucide/vue';
+import { PlusIcon } from '@lucide/vue';
 import AppShell from '@/components/app/AppShell.vue';
 import PageBreadcrumbs from '@/components/app/PageBreadcrumbs.vue';
 import PageHeader from '@/components/app/PageHeader.vue';
@@ -28,9 +28,6 @@ const selectedWorkspace = ref('acme-ai');
             </template>
 
             <template #actions>
-                <Button variant="outline" size="icon" class="rounded-xl bg-white">
-                    <BellIcon class="size-4" />
-                </Button>
                 <Button variant="outline" class="rounded-xl bg-white">
                     Export
                 </Button>
