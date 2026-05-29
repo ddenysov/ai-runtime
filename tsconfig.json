@@ -1,0 +1,12 @@
+{
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./resources/js/*"]
+        },
+        "allowJs": true,
+        "checkJs": false,
+        "jsx": "preserve"
+    },
+    "include": ["resources/js/**/*.js", "resources/js/**/*.vue"]
+}
