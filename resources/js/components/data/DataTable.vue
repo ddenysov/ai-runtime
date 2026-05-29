@@ -21,7 +21,13 @@ defineProps({
         type: String,
         default: 'name',
     },
+    clickable: {
+        type: Boolean,
+        default: false,
+    },
 });
+
+defineEmits(['row-click']);
 </script>
 
 <template>
@@ -43,7 +49,11 @@ defineProps({
                 <TableRow
                     v-for="item in items"
                     :key="item[rowKey]"
-                    class="hover:bg-slate-50"
+                    :class="[
+                        'hover:bg-slate-50',
+                        clickable ? 'cursor-pointer' : undefined,
+                    ]"
+                    @click="clickable ? $emit('row-click', item) : undefined"
                 >
                     <TableCell
                         v-for="column in columns"
@@ -57,7 +67,7 @@ defineProps({
                             {{ item[column.key] }}
                         </slot>
                     </TableCell>
-                    <TableCell v-if="$slots['row-actions']">
+                    <TableCell v-if="$slots['row-actions']" @click.stop>
                         <slot name="row-actions" :item="item" />
                     </TableCell>
                 </TableRow>

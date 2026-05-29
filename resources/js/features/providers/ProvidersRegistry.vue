@@ -1,10 +1,9 @@
 <script setup>
 import { ref } from 'vue';
-import { MoreHorizontalIcon } from '@lucide/vue';
-import { Button } from '@/components/ui/button';
 import DataCardGrid from '@/components/data/DataCardGrid.vue';
 import DataPanel from '@/components/data/DataPanel.vue';
 import DataTable from '@/components/data/DataTable.vue';
+import ResourceActionsMenu from '@/components/data/ResourceActionsMenu.vue';
 import ResourceCard from '@/components/data/ResourceCard.vue';
 import SearchField from '@/components/data/SearchField.vue';
 import StatusBadge from '@/components/data/StatusBadge.vue';
@@ -20,6 +19,18 @@ const { query: searchQuery, filtered: filteredItems } = useFilteredList(provider
     'owner',
     'region',
 ]);
+
+function openResource(item) {
+    console.info('Open resource', item.name);
+}
+
+function editResource(item) {
+    console.info('Edit resource', item.name);
+}
+
+function deleteResource(item) {
+    console.info('Delete resource', item.name);
+}
 </script>
 
 <template>
@@ -38,8 +49,10 @@ const { query: searchQuery, filtered: filteredItems } = useFilteredList(provider
 
         <DataTable
             v-if="viewMode === 'list'"
+            clickable
             :columns="providerColumns"
             :items="filteredItems"
+            @row-click="openResource"
         >
             <template #cell-name="{ item }">
                 <div>
@@ -56,16 +69,23 @@ const { query: searchQuery, filtered: filteredItems } = useFilteredList(provider
                 <span class="font-medium">{{ item.cost }}</span>
             </template>
 
-            <template #row-actions>
-                <Button variant="ghost" size="icon-sm">
-                    <MoreHorizontalIcon class="size-4" />
-                </Button>
+            <template #row-actions="{ item }">
+                <ResourceActionsMenu
+                    @open="openResource(item)"
+                    @edit="editResource(item)"
+                    @delete="deleteResource(item)"
+                />
             </template>
         </DataTable>
 
         <DataCardGrid v-else :items="filteredItems">
             <template #default="{ item }">
-                <ResourceCard :item="item" />
+                <ResourceCard
+                    :item="item"
+                    @open="openResource(item)"
+                    @edit="editResource(item)"
+                    @delete="deleteResource(item)"
+                />
             </template>
         </DataCardGrid>
     </DataPanel>

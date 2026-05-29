@@ -1,5 +1,4 @@
 <script setup>
-import { Button } from '@/components/ui/button';
 import {
     Card,
     CardContent,
@@ -7,6 +6,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import ResourceActionsMenu from '@/components/data/ResourceActionsMenu.vue';
 import StatusBadge from '@/components/data/StatusBadge.vue';
 
 defineProps({
@@ -22,22 +22,34 @@ defineProps({
             { key: 'cost', label: 'Cost' },
         ],
     },
-    actionLabel: {
-        type: String,
-        default: 'Open',
-    },
 });
+
+const emit = defineEmits(['open', 'edit', 'delete']);
 </script>
 
 <template>
-    <Card class="border-slate-200 shadow-none transition hover:-translate-y-0.5 hover:shadow-md">
+    <Card
+        role="button"
+        tabindex="0"
+        class="cursor-pointer border-slate-200 shadow-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+        @click="emit('open')"
+        @keydown.enter="emit('open')"
+        @keydown.space.prevent="emit('open')"
+    >
         <CardHeader>
             <div class="flex items-start justify-between gap-3">
-                <div>
+                <div class="min-w-0 flex-1">
                     <CardTitle class="text-base">{{ item.name }}</CardTitle>
                     <CardDescription>{{ item.type }}</CardDescription>
                 </div>
-                <StatusBadge :status="item.status" :show-icon="false" />
+                <div class="flex shrink-0 items-center gap-1">
+                    <StatusBadge :status="item.status" :show-icon="false" />
+                    <ResourceActionsMenu
+                        @open="emit('open')"
+                        @edit="emit('edit')"
+                        @delete="emit('delete')"
+                    />
+                </div>
             </div>
         </CardHeader>
         <CardContent class="space-y-4">
@@ -47,10 +59,9 @@ defineProps({
                     <p class="font-semibold">{{ item[stat.key] }}</p>
                 </div>
             </div>
-            <div class="flex items-center justify-between text-sm">
-                <span class="text-slate-500">{{ item.owner }} · {{ item.region }}</span>
-                <Button variant="outline" size="sm">{{ actionLabel }}</Button>
-            </div>
+            <p class="text-sm text-slate-500">
+                {{ item.owner }} · {{ item.region }}
+            </p>
         </CardContent>
     </Card>
 </template>
