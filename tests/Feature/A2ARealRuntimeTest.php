@@ -81,7 +81,7 @@ class A2ARealRuntimeTest extends TestCase
 
     public function test_runtime_agents_persist_history_per_run_thread(): void
     {
-        config()->set('runtime-agents.agents.runtime_assistant.provider', 'echo');
+        $this->bindProvider(new EchoProvider);
 
         $firstRun = $this->createRun('runtime_assistant');
         $secondRun = $this->createRun('runtime_assistant');

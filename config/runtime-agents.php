@@ -59,8 +59,7 @@ return [
         'runtime_assistant' => [
             'name' => 'Runtime Assistant',
             'description' => 'Answers project-specific runtime questions.',
-            'provider' => env('RUNTIME_AGENT_PROVIDER', 'gemini'),
-            'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+            'ai_provider_model_slug' => env('RUNTIME_AGENT_AI_PROVIDER_MODEL_SLUG'),
             'history_context_window' => env('RUNTIME_AGENT_HISTORY_CONTEXT_WINDOW', 50000),
             'tools' => ['remote_a2a_agent', 'get_agent_card'],
             'subagents' => ['docs_assistant'],
@@ -94,8 +93,7 @@ return [
         'docs_assistant' => [
             'name' => 'Docs Assistant',
             'description' => 'Answers questions using approved documentation sources.',
-            'provider' => env('RUNTIME_AGENT_PROVIDER', 'gemini'),
-            'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+            'ai_provider_model_slug' => env('RUNTIME_AGENT_AI_PROVIDER_MODEL_SLUG'),
             'history_context_window' => env('RUNTIME_AGENT_HISTORY_CONTEXT_WINDOW', 50000),
             'tools' => ['remote_a2a_agent', 'get_agent_card'],
             'subagents' => ['topic_selector_assistant'],
@@ -132,8 +130,7 @@ return [
         'topic_selector_assistant' => [
             'name' => 'Topic Selector Assistant',
             'description' => 'Chooses a concise topic for another agent response.',
-            'provider' => env('RUNTIME_AGENT_PROVIDER', 'gemini'),
-            'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+            'ai_provider_model_slug' => env('RUNTIME_AGENT_AI_PROVIDER_MODEL_SLUG'),
             'history_context_window' => env('RUNTIME_AGENT_HISTORY_CONTEXT_WINDOW', 50000),
             'tools' => [],
             'subagents' => [],

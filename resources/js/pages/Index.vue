@@ -4,11 +4,9 @@ import { PlusIcon } from '@lucide/vue';
 import AppShell from '@/components/app/AppShell.vue';
 import PageBreadcrumbs from '@/components/app/PageBreadcrumbs.vue';
 import PageHeader from '@/components/app/PageHeader.vue';
-import StatCard from '@/components/data/StatCard.vue';
 import { Button } from '@/components/ui/button';
 import ProvidersRegistry from '@/features/providers/ProvidersRegistry.vue';
 import {
-    metrics,
     navigation,
     workspaces,
 } from '@/features/providers/providers.mock';
@@ -38,15 +36,7 @@ const selectedWorkspace = ref('acme-ai');
             </template>
         </PageHeader>
 
-        <div class="space-y-7 px-5 py-7 md:px-8 md:py-8">
-            <section class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                    v-for="metric in metrics"
-                    :key="metric.label"
-                    v-bind="metric"
-                />
-            </section>
-
+        <div class="px-5 py-7 md:px-8 md:py-8">
             <ProvidersRegistry />
         </div>
     </AppShell>
