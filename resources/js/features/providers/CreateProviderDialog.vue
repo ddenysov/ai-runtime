@@ -11,7 +11,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -38,6 +38,8 @@ const emit = defineEmits(['created']);
 
 const submitting = ref(false);
 const slugTouched = ref(false);
+const slugFieldActive = ref(false);
+const credentialFieldActive = ref(false);
 const serverErrors = ref({});
 
 const form = reactive({
@@ -61,6 +63,8 @@ function resetForm() {
     form.credentials = { key: '' };
     form.is_active = true;
     slugTouched.value = false;
+    slugFieldActive.value = false;
+    credentialFieldActive.value = false;
     serverErrors.value = {};
 }
 
@@ -130,8 +134,29 @@ async function submit() {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="gap-0 overflow-hidden p-0 sm:max-w-lg">
-            <form class="flex flex-col" @submit.prevent="submit">
+        <DialogContent class="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+            <form
+                class="flex flex-col"
+                autocomplete="off"
+                @submit.prevent="submit"
+            >
+                <!-- Decoy fields: browsers pair text + password; fill these instead of slug/API key -->
+                <input
+                    type="text"
+                    name="username"
+                    autocomplete="username"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="pointer-events-none absolute -left-[9999px] size-0 opacity-0"
+                >
+                <input
+                    type="password"
+                    name="password"
+                    autocomplete="current-password"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="pointer-events-none absolute -left-[9999px] size-0 opacity-0"
+                >
                 <DialogHeader class="border-b px-5 py-4 text-left">
                     <DialogTitle>New AI provider</DialogTitle>
                     <DialogDescription>
@@ -139,8 +164,8 @@ async function submit() {
                     </DialogDescription>
                 </DialogHeader>
 
-                <div class="max-h-[min(70vh,36rem)] overflow-y-auto px-5 py-5">
-                    <FieldGroup>
+                <div class="max-h-[min(70vh,32rem)] overflow-y-auto px-5 py-5">
+                    <FieldGroup class="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
                         <Field>
                             <FieldLabel for="provider-name">Display name</FieldLabel>
                             <Input
@@ -159,14 +184,16 @@ async function submit() {
                             <Input
                                 id="provider-slug"
                                 v-model="form.slug"
+                                name="ai-provider-slug"
                                 autocomplete="off"
+                                data-1p-ignore
+                                data-lpignore="true"
                                 placeholder="work-gemini"
+                                :readonly="!slugFieldActive"
                                 :aria-invalid="!!fieldError('slug')"
+                                @focus="slugFieldActive = true"
                                 @input="slugTouched = true"
                             />
-                            <FieldDescription>
-                                Lowercase identifier used in runtime configuration.
-                            </FieldDescription>
                             <FieldError :errors="fieldError('slug')" />
                         </Field>
 
@@ -186,21 +213,7 @@ async function submit() {
                                     </SelectItem>
                                 </SelectContent>
                             </Select>
-                            <FieldDescription v-if="selectedType">
-                                {{ selectedType.description }}
-                            </FieldDescription>
                             <FieldError :errors="fieldError('type')" />
-                        </Field>
-
-                        <Field>
-                            <FieldLabel for="provider-description">Description</FieldLabel>
-                            <Textarea
-                                id="provider-description"
-                                v-model="form.description"
-                                rows="3"
-                                placeholder="Optional notes for your team"
-                            />
-                            <FieldError :errors="fieldError('description')" />
                         </Field>
 
                         <template v-if="selectedType">
@@ -214,25 +227,33 @@ async function submit() {
                                 <Input
                                     :id="`credential-${credential.key}`"
                                     v-model="form.credentials[credential.key]"
+                                    :name="`ai-provider-credential-${credential.key}`"
                                     :type="credential.type"
                                     :placeholder="credential.placeholder"
-                                    autocomplete="off"
+                                    :autocomplete="credential.type === 'password' ? 'new-password' : 'off'"
+                                    data-1p-ignore
+                                    data-lpignore="true"
+                                    :readonly="!credentialFieldActive"
                                     :aria-invalid="!!fieldError(`credentials.${credential.key}`)"
+                                    @focus="credentialFieldActive = true"
                                 />
-                                <FieldDescription v-if="credential.description">
-                                    {{ credential.description }}
-                                </FieldDescription>
                                 <FieldError :errors="fieldError(`credentials.${credential.key}`)" />
                             </Field>
                         </template>
 
-                        <Field orientation="horizontal">
-                            <div class="flex flex-1 flex-col gap-1">
-                                <FieldLabel for="provider-active">Active</FieldLabel>
-                                <FieldDescription>
-                                    Inactive providers stay stored but are not used by runtime agents.
-                                </FieldDescription>
-                            </div>
+                        <Field class="sm:col-span-2">
+                            <FieldLabel for="provider-description">Description</FieldLabel>
+                            <Textarea
+                                id="provider-description"
+                                v-model="form.description"
+                                rows="2"
+                                placeholder="Optional notes for your team"
+                            />
+                            <FieldError :errors="fieldError('description')" />
+                        </Field>
+
+                        <Field orientation="horizontal" class="sm:col-span-2">
+                            <FieldLabel for="provider-active">Active</FieldLabel>
                             <Switch
                                 id="provider-active"
                                 v-model:checked="form.is_active"
@@ -241,7 +262,7 @@ async function submit() {
                     </FieldGroup>
                 </div>
 
-                <DialogFooter class="border-t bg-muted/30 px-5 py-4">
+                <DialogFooter class="mx-0 mb-0 border-t bg-muted/30 px-5 pt-4 pb-5">
                     <Button
                         type="button"
                         variant="outline"
