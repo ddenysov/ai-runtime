@@ -22,6 +22,41 @@ export async function apiFetch(url, options = {}) {
     return data;
 }
 
+function appendQueryParam(params, key, value) {
+    if (value === undefined || value === null || value === '') {
+        return;
+    }
+
+    params.set(key, value);
+}
+
+export function listAiProviders({
+    search,
+    type,
+    isActive,
+    sort,
+    page,
+    perPage,
+    includeModelsCount = true,
+} = {}) {
+    const params = new URLSearchParams();
+
+    appendQueryParam(params, 'filter[search]', search);
+    appendQueryParam(params, 'filter[type]', type);
+    appendQueryParam(params, 'filter[is_active]', isActive);
+    appendQueryParam(params, 'sort', sort);
+    appendQueryParam(params, 'page', page);
+    appendQueryParam(params, 'per_page', perPage);
+
+    if (includeModelsCount) {
+        params.set('include', 'modelsCount');
+    }
+
+    const query = params.toString();
+
+    return apiFetch(`/api/ai-providers${query ? `?${query}` : ''}`);
+}
+
 export function createAiProvider(payload) {
     return apiFetch('/api/ai-providers', {
         method: 'POST',

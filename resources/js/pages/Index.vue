@@ -14,6 +14,11 @@ import {
 
 const selectedWorkspace = ref('acme-ai');
 const createProviderOpen = ref(false);
+const providersRegistry = ref(null);
+
+function refreshProviders() {
+    providersRegistry.value?.reload();
+}
 </script>
 
 <template>
@@ -42,9 +47,12 @@ const createProviderOpen = ref(false);
         </PageHeader>
 
         <div class="px-5 py-7 md:px-8 md:py-8">
-            <ProvidersRegistry />
+            <ProvidersRegistry ref="providersRegistry" />
         </div>
 
-        <CreateProviderDialog v-model:open="createProviderOpen" />
+        <CreateProviderDialog
+            v-model:open="createProviderOpen"
+            @created="refreshProviders"
+        />
     </AppShell>
 </template>

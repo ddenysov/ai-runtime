@@ -144,4 +144,90 @@ class AiProviderTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['slug', 'name', 'type', 'credentials.key']);
     }
+
+    public function test_can_list_ai_providers_with_search_filters_sorting_and_pagination(): void
+    {
+        $sandbox = AiProvider::query()->create([
+            'slug' => 'sandbox-gemini',
+            'name' => 'Sandbox Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'sandbox-secret-key',
+            ],
+            'is_active' => false,
+        ]);
+
+        $production = AiProvider::query()->create([
+            'slug' => 'production-gemini',
+            'name' => 'Production Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'production-secret-key',
+            ],
+            'is_active' => true,
+        ]);
+
+        $production->models()->create([
+            'slug' => 'production-flash',
+            'name' => 'Production Flash',
+            'model' => 'gemini-3.1-flash',
+        ]);
+        $production->models()->create([
+            'slug' => 'production-pro',
+            'name' => 'Production Pro',
+            'model' => 'gemini-3.1-pro',
+        ]);
+
+        $response = $this->getJson('/api/ai-providers?'.http_build_query([
+            'filter' => [
+                'search' => 'gemini',
+                'type' => 'gemini',
+                'is_active' => true,
+            ],
+            'include' => 'modelsCount',
+            'sort' => 'name',
+            'page' => 1,
+            'per_page' => 1,
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.slug', 'production-gemini')
+            ->assertJsonPath('data.0.models_count', 2)
+            ->assertJsonPath('current_page', 1)
+            ->assertJsonPath('per_page', 1)
+            ->assertJsonPath('total', 1);
+
+        $this->assertArrayNotHasKey('credentials', $response->json('data.0'));
+        $this->assertTrue($sandbox->is(AiProvider::query()->where('slug', 'sandbox-gemini')->first()));
+    }
+
+    public function test_can_sort_ai_providers_descending(): void
+    {
+        AiProvider::query()->create([
+            'slug' => 'alpha-gemini',
+            'name' => 'Alpha Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'alpha-secret-key',
+            ],
+        ]);
+
+        AiProvider::query()->create([
+            'slug' => 'zeta-gemini',
+            'name' => 'Zeta Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'zeta-secret-key',
+            ],
+        ]);
+
+        $response = $this->getJson('/api/ai-providers?sort=-name');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.0.slug', 'zeta-gemini')
+            ->assertJsonPath('data.1.slug', 'alpha-gemini');
+    }
 }

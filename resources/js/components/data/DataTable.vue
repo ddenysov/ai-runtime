@@ -1,4 +1,5 @@
 <script setup>
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from '@lucide/vue';
 import {
     Table,
     TableBody,
@@ -8,7 +9,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 
-defineProps({
+const props = defineProps({
     columns: {
         type: Array,
         required: true,
@@ -25,9 +26,47 @@ defineProps({
         type: Boolean,
         default: false,
     },
+    sort: {
+        type: String,
+        default: '',
+    },
 });
 
-defineEmits(['row-click']);
+const emit = defineEmits(['row-click', 'sort']);
+
+function sortField(column) {
+    return column.sortKey ?? column.key;
+}
+
+function sortDirection(column) {
+    const field = sortField(column);
+
+    if (!field || !column.sortable) {
+        return undefined;
+    }
+
+    if (props.sort === field) {
+        return 'asc';
+    }
+
+    if (props.sort === `-${field}`) {
+        return 'desc';
+    }
+
+    return undefined;
+}
+
+function nextSort(column) {
+    const field = sortField(column);
+    const direction = sortDirection(column);
+
+    if (!field || !column.sortable) {
+        return;
+    }
+
+    emit('sort', direction === 'asc' ? `-${field}` : field);
+}
+
 </script>
 
 <template>
@@ -40,7 +79,21 @@ defineEmits(['row-click']);
                         :key="column.key"
                         :class="column.align === 'right' ? 'text-right' : undefined"
                     >
-                        {{ column.label }}
+                        <button
+                            v-if="column.sortable"
+                            type="button"
+                            class="inline-flex items-center gap-1 font-medium"
+                            :class="column.align === 'right' ? 'justify-end' : undefined"
+                            @click="nextSort(column)"
+                        >
+                            {{ column.label }}
+                            <ArrowUpIcon v-if="sortDirection(column) === 'asc'" class="size-3.5" />
+                            <ArrowDownIcon v-else-if="sortDirection(column) === 'desc'" class="size-3.5" />
+                            <ChevronsUpDownIcon v-else class="app-muted-text size-3.5" />
+                        </button>
+                        <template v-else>
+                            {{ column.label }}
+                        </template>
                     </TableHead>
                     <TableHead v-if="$slots['row-actions']" class="w-12" />
                 </TableRow>
