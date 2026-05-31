@@ -142,6 +142,25 @@ export function getAgent(id) {
     return apiFetch(`/api/agents/${id}`);
 }
 
+export function listAgentChats({
+    id,
+    search,
+    sort,
+    page,
+    perPage,
+} = {}) {
+    const params = new URLSearchParams();
+
+    appendQueryParam(params, 'filter[search]', search);
+    appendQueryParam(params, 'sort', sort);
+    appendQueryParam(params, 'page', page);
+    appendQueryParam(params, 'per_page', perPage);
+
+    const query = params.toString();
+
+    return apiFetch(`/api/agents/${id}/chats${query ? `?${query}` : ''}`);
+}
+
 export function sendAgentChatMessage(id, message, contextId) {
     return apiFetch(`/api/agents/${id}/chat`, {
         method: 'POST',

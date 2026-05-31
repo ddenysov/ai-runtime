@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/agents', [AgentController::class, 'index']);
 Route::post('/agents', [AgentController::class, 'store']);
+Route::get('/agents/{agent}/chats', [AgentChatController::class, 'index']);
 Route::post('/agents/{agent}/chat', [AgentChatController::class, 'store']);
 Route::get('/agents/{agent}/chat/{contextId}', [AgentChatController::class, 'show']);
 Route::get('/agents/{agent}/chat/{run}/events', [AgentChatController::class, 'events'])->name('agents.chat.events');

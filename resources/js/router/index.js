@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import AgentChat from '@/pages/AgentChat.vue';
+import AgentChatHistory from '@/pages/AgentChatHistory.vue';
 import AgentDetails from '@/pages/AgentDetails.vue';
 import Agents from '@/pages/Agents.vue';
 import Index from '@/pages/Index.vue';
@@ -19,6 +20,12 @@ const routes = [
         path: '/agents/:agentId',
         name: 'agent-details',
         component: AgentDetails,
+        props: true,
+    },
+    {
+        path: '/agents/:agentId/chats',
+        name: 'agent-chat-history',
+        component: AgentChatHistory,
         props: true,
     },
     {

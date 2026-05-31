@@ -219,6 +219,15 @@ function openChat() {
     });
 }
 
+function openChatHistory() {
+    router.push({
+        name: 'agent-chat-history',
+        params: {
+            agentId: props.agentId,
+        },
+    });
+}
+
 function formatInstructionSections(instructions = {}) {
     const knownKeys = ['background', 'steps', 'output'];
     const extraKeys = Object.keys(instructions ?? {})
@@ -401,6 +410,14 @@ onMounted(fetchAgent);
                                     >
                                         <MessageCircleIcon class="size-4" />
                                         Chat
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        class="app-soft-control"
+                                        @click="openChatHistory"
+                                    >
+                                        <HistoryIcon class="size-4" />
+                                        Chat history
                                     </Button>
                                     <Button
                                         v-if="a2aCardUrl"

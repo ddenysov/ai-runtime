@@ -16,6 +16,98 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AgentChatController extends Controller
 {
+    public function index(Request $request, Agent $agent): JsonResponse
+    {
+        $perPage = min(max($request->integer('per_page', 10), 1), 50);
+        $prefix = "{$agent->slug}:";
+        $search = trim((string) $request->input('filter.search', ''));
+        $sort = (string) $request->input('sort', '-last_message_at');
+
+        $query = AgentChatMessage::query()
+            ->select('thread_id')
+            ->selectRaw('COUNT(*) as messages_count')
+            ->selectRaw('MIN(created_at) as started_at')
+            ->selectRaw('MAX(created_at) as last_message_at')
+            ->where('thread_id', 'like', "{$prefix}%")
+            ->groupBy('thread_id');
+
+        if ($search !== '') {
+            $matchingThreads = AgentChatMessage::query()
+                ->select('thread_id')
+                ->where('thread_id', 'like', "{$prefix}%")
+                ->where(function ($query) use ($search): void {
+                    $query
+                        ->where('thread_id', 'like', "%{$search}%")
+                        ->orWhere('content', 'like', "%{$search}%");
+                });
+
+            $query->whereIn('thread_id', $matchingThreads);
+        }
+
+        match ($sort) {
+            'last_message_at' => $query->oldest('last_message_at'),
+            '-started_at' => $query->latest('started_at'),
+            'started_at' => $query->oldest('started_at'),
+            '-messages_count' => $query->orderByDesc('messages_count'),
+            'messages_count' => $query->orderBy('messages_count'),
+            '-context_id' => $query->orderByDesc('thread_id'),
+            'context_id' => $query->orderBy('thread_id'),
+            default => $query->latest('last_message_at'),
+        };
+
+        $chats = $query
+            ->paginate($perPage)
+            ->appends($request->query());
+
+        $threadIds = collect($chats->items())
+            ->pluck('thread_id')
+            ->values();
+        $contextIds = $threadIds
+            ->map(fn (string $threadId): string => Str::after($threadId, $prefix))
+            ->values();
+        $messagesByThread = AgentChatMessage::query()
+            ->whereIn('thread_id', $threadIds)
+            ->latest()
+            ->get()
+            ->groupBy('thread_id');
+        $latestRunsByContext = AgentRun::query()
+            ->where('agent_slug', $agent->slug)
+            ->whereIn('input->context_id', $contextIds)
+            ->latest()
+            ->get()
+            ->unique(fn (AgentRun $run): ?string => $run->input['context_id'] ?? null)
+            ->keyBy(fn (AgentRun $run): ?string => $run->input['context_id'] ?? null);
+
+        return response()->json($chats->through(function (object $chat) use ($agent, $messagesByThread, $latestRunsByContext, $prefix): array {
+            $contextId = Str::after($chat->thread_id, $prefix);
+            $threadMessages = $messagesByThread->get($chat->thread_id, collect());
+            $previewMessage = $threadMessages->firstWhere('role', 'user') ?? $threadMessages->first();
+            $latestRun = $latestRunsByContext->get($contextId);
+
+            return [
+                'context_id' => $contextId,
+                'thread_id' => $chat->thread_id,
+                'preview' => $previewMessage instanceof AgentChatMessage
+                    ? Str::limit($this->messageText($previewMessage->content) ?? '', 180)
+                    : '',
+                'messages_count' => (int) $chat->messages_count,
+                'started_at' => $chat->started_at,
+                'last_message_at' => $chat->last_message_at,
+                'latest_run' => $latestRun instanceof AgentRun ? [
+                    'id' => $latestRun->id,
+                    'state' => $latestRun->state,
+                    'created_at' => $latestRun->created_at?->toISOString(),
+                    'updated_at' => $latestRun->updated_at?->toISOString(),
+                ] : null,
+                'agent' => [
+                    'id' => $agent->id,
+                    'slug' => $agent->slug,
+                    'name' => $agent->name,
+                ],
+            ];
+        }));
+    }
+
     public function store(
         Request $request,
         Agent $agent,
