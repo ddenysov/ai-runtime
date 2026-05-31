@@ -7,6 +7,7 @@ use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
 use App\Models\A2ATask;
 use App\Models\Agent;
+use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -59,6 +60,44 @@ class AgentChatController extends Controller
             ], false),
             'snapshot' => $this->snapshot($run),
         ], 202);
+    }
+
+    public function show(Agent $agent, string $contextId): JsonResponse
+    {
+        $latestRun = $this->latestRunForContext($agent, $contextId);
+        $messages = AgentChatMessage::query()
+            ->where('thread_id', "{$agent->slug}:{$contextId}")
+            ->oldest()
+            ->get()
+            ->map(fn (AgentChatMessage $message): array => [
+                'id' => (string) $message->id,
+                'role' => $message->role === 'user' ? 'user' : 'assistant',
+                'content' => $this->messageText($message->content) ?? '',
+                'created_at' => $message->created_at?->toISOString(),
+            ])
+            ->values();
+
+        if ($messages->isEmpty() && $latestRun instanceof AgentRun) {
+            $messages->push([
+                'id' => "run-{$latestRun->id}-user",
+                'role' => 'user',
+                'content' => $this->messageText($latestRun->input['message'] ?? null) ?? '',
+                'created_at' => $latestRun->created_at?->toISOString(),
+            ]);
+        }
+
+        return response()->json([
+            'context_id' => $contextId,
+            'messages' => $messages,
+            'latest_run' => $latestRun instanceof AgentRun ? [
+                'run_id' => $latestRun->id,
+                'stream_url' => route('agents.chat.events', [
+                    'agent' => $agent,
+                    'run' => $latestRun->id,
+                ], false),
+                'snapshot' => $this->snapshot($latestRun),
+            ] : null,
+        ]);
     }
 
     public function events(Request $request, Agent $agent, string $run): StreamedResponse
@@ -156,6 +195,15 @@ class AgentChatController extends Controller
         return A2ATask::query()->find($taskId);
     }
 
+    private function latestRunForContext(Agent $agent, string $contextId): ?AgentRun
+    {
+        return AgentRun::query()
+            ->where('agent_slug', $agent->slug)
+            ->where('input->context_id', $contextId)
+            ->latest()
+            ->first();
+    }
+
     private function terminal(?string $taskState, string $runState): bool
     {
         if ($taskState !== null && A2AState::isTerminal($taskState)) {
@@ -174,24 +222,45 @@ class AgentChatController extends Controller
 
     private function messageText(mixed $message): ?string
     {
+        if ($message === null) {
+            return null;
+        }
+
+        if (is_string($message) || is_numeric($message) || is_bool($message)) {
+            return trim((string) $message);
+        }
+
         if (! is_array($message)) {
             return null;
         }
 
-        $parts = collect($message['parts'] ?? [])
-            ->map(function (array $part): ?string {
-                if (isset($part['text'])) {
-                    return (string) $part['text'];
-                }
+        if (isset($message['text'])) {
+            return $this->messageText($message['text']);
+        }
 
-                return isset($part['data'])
-                    ? json_encode($part['data'], JSON_THROW_ON_ERROR)
-                    : null;
-            })
-            ->filter()
-            ->values();
+        if (isset($message['content'])) {
+            return $this->messageText($message['content']);
+        }
 
-        return $parts->isEmpty() ? null : $parts->implode("\n");
+        if (isset($message['data'])) {
+            return json_encode($message['data'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        }
+
+        if (isset($message['parts']) && is_array($message['parts'])) {
+            return collect($message['parts'])
+                ->map(fn (mixed $part): ?string => $this->messageText($part))
+                ->filter()
+                ->implode("\n") ?: null;
+        }
+
+        if (array_is_list($message)) {
+            return collect($message)
+                ->map(fn (mixed $part): ?string => $this->messageText($part))
+                ->filter()
+                ->implode("\n") ?: null;
+        }
+
+        return trim(json_encode($message, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)) ?: null;
     }
 
     private function sendEvent(string $event, array $payload): void

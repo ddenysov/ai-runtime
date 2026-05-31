@@ -25,7 +25,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { agentChatEventsUrl, getAgent, sendAgentChatMessage } from '@/lib/api';
+import { agentChatEventsUrl, getAgent, getAgentChatHistory, sendAgentChatMessage } from '@/lib/api';
 import {
     navigation,
     workspaces,
@@ -35,6 +35,10 @@ const props = defineProps({
     agentId: {
         type: [Number, String],
         required: true,
+    },
+    contextId: {
+        type: String,
+        default: '',
     },
 });
 
@@ -47,10 +51,11 @@ const agent = ref(null);
 const draft = ref('');
 const messages = ref([]);
 const activeRunId = ref('');
-const chatContextId = ref(crypto.randomUUID());
+const chatContextId = ref(props.contextId || crypto.randomUUID());
 const streamStatus = ref('Idle');
 const messagesPanel = ref(null);
 let requestSequence = 0;
+let historyRequestSequence = 0;
 let eventSource = null;
 
 const agentNavigation = computed(() => navigation.map((item) => ({
@@ -96,6 +101,38 @@ async function fetchAgent() {
     }
 }
 
+async function fetchChatHistory() {
+    const contextId = props.contextId || '';
+
+    if (!contextId) {
+        return;
+    }
+
+    const sequence = ++historyRequestSequence;
+
+    try {
+        const response = await getAgentChatHistory(props.agentId, contextId);
+
+        if (sequence !== historyRequestSequence || contextId !== chatContextId.value) {
+            return;
+        }
+
+        messages.value = (response.messages ?? []).map((message) => ({
+            id: `history-${message.id}`,
+            role: message.role,
+            content: message.content,
+            createdAt: message.created_at ? new Date(message.created_at) : null,
+            pending: false,
+        }));
+        resumeLatestRun(response.latest_run);
+        scrollToBottom();
+    } catch (fetchError) {
+        if (sequence === historyRequestSequence) {
+            error.value = fetchError.message;
+        }
+    }
+}
+
 async function submitMessage() {
     const content = draft.value.trim();
 
@@ -108,6 +145,7 @@ async function submitMessage() {
     sending.value = true;
     streamStatus.value = 'Submitting';
     closeStream();
+    ensureContextRoute();
 
     messages.value.push({
         id: crypto.randomUUID(),
@@ -128,6 +166,7 @@ async function submitMessage() {
     try {
         const response = await sendAgentChatMessage(props.agentId, content, chatContextId.value);
         chatContextId.value = response.context_id ?? chatContextId.value;
+        ensureContextRoute();
         activeRunId.value = response.run_id;
         applySnapshot(assistantMessageId, response.snapshot);
         openStream(
@@ -204,6 +243,40 @@ function applySnapshot(messageId, snapshot) {
     scrollToBottom();
 }
 
+function resumeLatestRun(latestRun) {
+    if (!latestRun?.run_id) {
+        activeRunId.value = '';
+
+        return;
+    }
+
+    activeRunId.value = latestRun.run_id;
+
+    if (latestRun.snapshot?.terminal) {
+        return;
+    }
+
+    const assistantMessageId = `run-${latestRun.run_id}-assistant`;
+
+    if (!messages.value.some((message) => message.id === assistantMessageId)) {
+        messages.value.push({
+            id: assistantMessageId,
+            role: 'assistant',
+            content: 'Agent is working...',
+            status: 'Working',
+            createdAt: new Date(),
+            pending: true,
+        });
+    }
+
+    sending.value = true;
+    applySnapshot(assistantMessageId, latestRun.snapshot);
+    openStream(
+        assistantMessageId,
+        latestRun.stream_url ?? agentChatEventsUrl(props.agentId, latestRun.run_id),
+    );
+}
+
 function markAssistantFailed(messageId, message) {
     const assistantMessage = messages.value.find((item) => item.id === messageId);
 
@@ -225,6 +298,20 @@ function closeStream() {
         eventSource.close();
         eventSource = null;
     }
+}
+
+function ensureContextRoute() {
+    if (props.contextId === chatContextId.value) {
+        return;
+    }
+
+    router.replace({
+        name: 'agent-chat',
+        params: {
+            agentId: props.agentId,
+            contextId: chatContextId.value,
+        },
+    });
 }
 
 function goBack() {
@@ -278,11 +365,27 @@ watch(() => props.agentId, () => {
     closeStream();
     messages.value = [];
     activeRunId.value = '';
-    chatContextId.value = crypto.randomUUID();
+    chatContextId.value = props.contextId || crypto.randomUUID();
     streamStatus.value = 'Idle';
     fetchAgent();
+    fetchChatHistory();
 });
-onMounted(fetchAgent);
+watch(() => props.contextId, (contextId) => {
+    if (!contextId || contextId === chatContextId.value) {
+        return;
+    }
+
+    closeStream();
+    messages.value = [];
+    activeRunId.value = '';
+    chatContextId.value = contextId;
+    streamStatus.value = 'Idle';
+    fetchChatHistory();
+});
+onMounted(() => {
+    fetchAgent();
+    fetchChatHistory();
+});
 onBeforeUnmount(closeStream);
 </script>
 

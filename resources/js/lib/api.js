@@ -149,6 +149,10 @@ export function sendAgentChatMessage(id, message, contextId) {
     });
 }
 
+export function getAgentChatHistory(id, contextId) {
+    return apiFetch(`/api/agents/${id}/chat/${contextId}`);
+}
+
 export function agentChatEventsUrl(id, runId) {
     return `/api/agents/${id}/chat/${runId}/events`;
 }

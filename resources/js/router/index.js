@@ -22,7 +22,7 @@ const routes = [
         props: true,
     },
     {
-        path: '/agents/:agentId/chat',
+        path: '/agents/:agentId/chat/:contextId?',
         name: 'agent-chat',
         component: AgentChat,
         props: true,
