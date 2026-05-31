@@ -40,6 +40,7 @@ class SendMessageAction
                 'state' => 'submitted',
                 'input' => [
                     'a2a_task_id' => $task['id'],
+                    'context_id' => $task['contextId'],
                     'message' => $message,
                     'parent_agent_run_id' => $metadata['parent_agent_run_id'] ?? null,
                     'parent_tool_call_id' => $metadata['parent_tool_call_id'] ?? null,

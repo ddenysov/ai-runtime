@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Agent;
+use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use App\Models\AiProvider;
 use App\Models\AiProviderModel;
@@ -186,6 +187,7 @@ class AgentTest extends TestCase
             ->assertJsonStructure([
                 'run_id',
                 'task_id',
+                'context_id',
                 'stream_url',
                 'snapshot' => [
                     'run' => ['id', 'state'],
@@ -201,6 +203,49 @@ class AgentTest extends TestCase
 
         $this->assertSame('chat-assistant', $run->agent_slug);
         $this->assertStringContainsString('hello from chat', $run->output['message']);
+    }
+
+    public function test_agent_chat_reuses_context_history_across_runs(): void
+    {
+        $this->bindProvider(new EchoProvider);
+        $agent = Agent::query()->create([
+            'slug' => 'context-chat-assistant',
+            'name' => 'Context Chat Assistant',
+            'ai_provider_model_id' => $this->providerModel()->id,
+            'instructions' => ['background' => ['Answer chat prompts.']],
+            'is_active' => true,
+        ]);
+        $contextId = 'browser-chat-context';
+
+        $firstResponse = $this->postJson("/api/agents/{$agent->id}/chat", [
+            'message' => 'first chat message',
+            'context_id' => $contextId,
+        ]);
+        $secondResponse = $this->postJson("/api/agents/{$agent->id}/chat", [
+            'message' => 'second chat message',
+            'context_id' => $contextId,
+        ]);
+
+        $firstResponse
+            ->assertAccepted()
+            ->assertJsonPath('context_id', $contextId);
+        $secondResponse
+            ->assertAccepted()
+            ->assertJsonPath('context_id', $contextId);
+
+        $firstRun = AgentRun::query()->findOrFail($firstResponse->json('run_id'));
+        $secondRun = AgentRun::query()->findOrFail($secondResponse->json('run_id'));
+
+        $this->assertNotSame($firstRun->id, $secondRun->id);
+        $this->assertSame($contextId, $firstRun->input['context_id']);
+        $this->assertSame($contextId, $secondRun->input['context_id']);
+        $this->assertStringContainsString('first chat message', $secondRun->output['message']);
+        $this->assertStringContainsString('second chat message', $secondRun->output['message']);
+        $this->assertSame(1, AgentChatMessage::query()->distinct('thread_id')->count('thread_id'));
+        $this->assertDatabaseHas('agent_chat_messages', [
+            'thread_id' => "context-chat-assistant:{$contextId}",
+            'role' => 'user',
+        ]);
     }
 
     public function test_agent_chat_events_stream_completed_run_snapshot(): void

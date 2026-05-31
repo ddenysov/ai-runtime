@@ -142,10 +142,10 @@ export function getAgent(id) {
     return apiFetch(`/api/agents/${id}`);
 }
 
-export function sendAgentChatMessage(id, message) {
+export function sendAgentChatMessage(id, message, contextId) {
     return apiFetch(`/api/agents/${id}/chat`, {
         method: 'POST',
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, context_id: contextId }),
     });
 }
 

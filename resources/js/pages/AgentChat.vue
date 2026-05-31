@@ -47,6 +47,7 @@ const agent = ref(null);
 const draft = ref('');
 const messages = ref([]);
 const activeRunId = ref('');
+const chatContextId = ref(crypto.randomUUID());
 const streamStatus = ref('Idle');
 const messagesPanel = ref(null);
 let requestSequence = 0;
@@ -125,7 +126,8 @@ async function submitMessage() {
     scrollToBottom();
 
     try {
-        const response = await sendAgentChatMessage(props.agentId, content);
+        const response = await sendAgentChatMessage(props.agentId, content, chatContextId.value);
+        chatContextId.value = response.context_id ?? chatContextId.value;
         activeRunId.value = response.run_id;
         applySnapshot(assistantMessageId, response.snapshot);
         openStream(
@@ -276,6 +278,7 @@ watch(() => props.agentId, () => {
     closeStream();
     messages.value = [];
     activeRunId.value = '';
+    chatContextId.value = crypto.randomUUID();
     streamStatus.value = 'Idle';
     fetchAgent();
 });

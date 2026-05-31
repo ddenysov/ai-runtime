@@ -29,14 +29,17 @@ class AgentChatController extends Controller
 
         $validated = $request->validate([
             'message' => ['required', 'string', 'max:20000'],
+            'context_id' => ['sometimes', 'string', 'max:255'],
         ]);
 
         $runId = (string) Str::uuid();
+        $contextId = $validated['context_id'] ?? (string) Str::uuid();
         $task = $messages->handle(
             $agent->slug,
             $payloads->userMessage($validated['message']),
             metadata: [
                 'agent_run_id' => $runId,
+                'contextId' => $contextId,
                 'source' => 'agent_chat',
             ],
         );
@@ -49,6 +52,7 @@ class AgentChatController extends Controller
         return response()->json([
             'run_id' => $runId,
             'task_id' => $task['id'],
+            'context_id' => $task['contextId'],
             'stream_url' => route('agents.chat.events', [
                 'agent' => $agent,
                 'run' => $runId,

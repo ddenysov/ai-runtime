@@ -71,6 +71,7 @@ class ProcessA2ATask implements ShouldQueue
                 agentRunId: $run->id,
                 a2aTaskId: $task['id'],
                 resumeToken: $run->workflow_resume_token,
+                conversationId: $task['contextId'] ?? null,
             ));
             $messages = $this->initialMessages($run, $input);
             $response = $agent->chat(...$messages)->getMessage()->getContent() ?? '';
