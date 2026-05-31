@@ -136,6 +136,32 @@ class AgentTest extends TestCase
         $this->assertTrue($inactive->exists);
     }
 
+    public function test_can_show_agent_details_via_api(): void
+    {
+        $providerModel = $this->providerModel();
+        $agent = Agent::query()->create([
+            'slug' => 'runtime-assistant',
+            'name' => 'Runtime Assistant',
+            'ai_provider_model_id' => $providerModel->id,
+            'instructions' => ['background' => ['Runtime']],
+            'input_modes' => ['text/plain'],
+            'output_modes' => ['application/json'],
+            'is_active' => true,
+        ]);
+        $agent->tools()->create(['slug' => 'remote_a2a_agent', 'is_enabled' => true]);
+        $agent->createVersionSnapshot();
+
+        $response = $this->getJson("/api/agents/{$agent->id}");
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('slug', 'runtime-assistant')
+            ->assertJsonPath('provider_model.id', $providerModel->id)
+            ->assertJsonPath('provider_model.provider.id', $providerModel->provider->id)
+            ->assertJsonPath('tools.0.slug', 'remote_a2a_agent')
+            ->assertJsonPath('versions.0.version', 1);
+    }
+
     public function test_runtime_definition_repository_resolves_active_database_agent_before_config(): void
     {
         $providerModel = $this->providerModel();

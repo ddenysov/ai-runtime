@@ -84,6 +84,17 @@ class AgentController extends Controller
         return response()->json($agent->load(['providerModel.provider', 'tools', 'versions']), 201);
     }
 
+    public function show(Agent $agent): JsonResponse
+    {
+        return response()->json(
+            $agent->load([
+                'providerModel.provider',
+                'tools',
+                'versions' => fn ($query) => $query->latest('version'),
+            ])
+        );
+    }
+
     public function destroy(Agent $agent)
     {
         $agent->delete();

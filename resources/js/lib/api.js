@@ -138,6 +138,10 @@ export function createAgent(payload) {
     });
 }
 
+export function getAgent(id) {
+    return apiFetch(`/api/agents/${id}`);
+}
+
 export function deleteAgent(id) {
     return apiFetch(`/api/agents/${id}`, {
         method: 'DELETE',

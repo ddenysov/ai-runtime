@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/agents', [AgentController::class, 'index']);
 Route::post('/agents', [AgentController::class, 'store']);
+Route::get('/agents/{agent}', [AgentController::class, 'show']);
 Route::delete('/agents/{agent}', [AgentController::class, 'destroy']);
 
 Route::get('/ai-providers', [AiProviderController::class, 'index']);

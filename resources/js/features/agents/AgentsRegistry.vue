@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { LoaderCircleIcon } from '@lucide/vue';
 import { toast } from 'vue-sonner';
 import DataCardGrid from '@/components/data/DataCardGrid.vue';
@@ -40,6 +41,7 @@ import {
 } from '@/components/ui/select';
 import { deleteAgent, listAgents } from '@/lib/api';
 
+const router = useRouter();
 const viewMode = ref('list');
 const searchQuery = ref('');
 const statusFilter = ref('all');
@@ -180,7 +182,12 @@ function retry() {
 }
 
 function openResource(item) {
-    console.info('Open agent', item.name);
+    router.push({
+        name: 'agent-details',
+        params: {
+            agentId: item.id,
+        },
+    });
 }
 
 function editResource(item) {
