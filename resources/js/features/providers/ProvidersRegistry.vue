@@ -27,7 +27,18 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { listAiProviders } from '@/lib/api';
+import { toast } from 'vue-sonner';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { deleteAiProvider, listAiProviders } from '@/lib/api';
 import { findProviderType, providerTypes } from '@/features/providers/provider-types';
 
 const viewMode = ref('list');
@@ -38,9 +49,12 @@ const sort = ref('-updated_at');
 const page = ref(1);
 const perPage = ref('10');
 const loading = ref(false);
+const deleting = ref(false);
 const error = ref('');
 const providers = ref([]);
 const pagination = ref({});
+const deleteDialogOpen = ref(false);
+const providerToDelete = ref(null);
 let searchTimer;
 let requestSequence = 0;
 
@@ -170,7 +184,32 @@ function editResource(item) {
 }
 
 function deleteResource(item) {
-    console.info('Delete resource', item.name);
+    providerToDelete.value = item;
+    deleteDialogOpen.value = true;
+}
+
+async function confirmDelete() {
+    if (!providerToDelete.value) {
+        return;
+    }
+
+    deleting.value = true;
+
+    try {
+        await deleteAiProvider(providerToDelete.value.id);
+        toast.success('Provider deleted', {
+            description: `${providerToDelete.value.name} was removed.`,
+        });
+        deleteDialogOpen.value = false;
+        providerToDelete.value = null;
+        await fetchProviders();
+    } catch (deleteError) {
+        toast.error('Could not delete provider', {
+            description: deleteError.message,
+        });
+    } finally {
+        deleting.value = false;
+    }
 }
 
 watch([typeFilter, statusFilter, sort, perPage], resetPageAndFetch);
@@ -347,4 +386,31 @@ defineExpose({
             </div>
         </div>
     </DataPanel>
+
+    <AlertDialog v-model:open="deleteDialogOpen">
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Delete provider?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    <template v-if="providerToDelete">
+                        This will permanently remove
+                        <span class="text-foreground font-medium">{{ providerToDelete.name }}</span>
+                        and its {{ providerToDelete.models_count }} model(s). This action cannot be
+                        undone.
+                    </template>
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel :disabled="deleting">Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                    variant="destructive"
+                    :disabled="deleting"
+                    @click.prevent="confirmDelete"
+                >
+                    <LoaderCircleIcon v-if="deleting" class="size-4 animate-spin" />
+                    Delete provider
+                </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
 </template>

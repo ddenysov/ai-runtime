@@ -7,7 +7,9 @@ use App\Http\Controllers\AiProviderController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/ai-providers', [AiProviderController::class, 'index']);
+Route::post('/ai-providers/test-connection', [AiProviderController::class, 'testConnection']);
 Route::post('/ai-providers', [AiProviderController::class, 'store']);
+Route::delete('/ai-providers/{aiProvider}', [AiProviderController::class, 'destroy']);
 
 Route::get('/a2a/{agent}/.well-known/agent-card.json', AgentCardController::class);
 

@@ -1,7 +1,8 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
-import { LoaderCircleIcon } from '@lucide/vue';
+import { LoaderCircleIcon, PlusIcon, Trash2Icon } from '@lucide/vue';
 import { toast } from 'vue-sonner';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -22,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { createAiProvider } from '@/lib/api';
+import { createAiProvider, testAiProviderConnection } from '@/lib/api';
 import {
     findProviderType,
     providerTypes,
@@ -37,6 +38,7 @@ const open = defineModel('open', {
 const emit = defineEmits(['created']);
 
 const submitting = ref(false);
+const testingModelIndex = ref(null);
 const slugTouched = ref(false);
 const slugFieldActive = ref(false);
 const credentialFieldActive = ref(false);
@@ -50,10 +52,21 @@ const form = reactive({
     credentials: {
         key: '',
     },
+    models: [
+        {
+            model: '',
+            name: '',
+            tested: false,
+        },
+    ],
     is_active: true,
 });
 
 const selectedType = computed(() => findProviderType(form.type));
+const modelPlaceholder = computed(() => selectedType.value?.modelPlaceholder ?? 'gemini-1.5-flash');
+const displayNamePlaceholder = computed(() => selectedType.value?.modelNamePlaceholder ?? 'Gemini 1.5 Flash');
+const hasAtLeastOneModel = computed(() => form.models.some((model) => model.model.trim()));
+const canSubmit = computed(() => hasAtLeastOneModel.value);
 
 function resetForm() {
     form.name = '';
@@ -61,6 +74,13 @@ function resetForm() {
     form.description = '';
     form.type = providerTypes[0]?.value ?? 'gemini';
     form.credentials = { key: '' };
+    form.models = [
+        {
+            model: '',
+            name: '',
+            tested: false,
+        },
+    ];
     form.is_active = true;
     slugTouched.value = false;
     slugFieldActive.value = false;
@@ -72,6 +92,92 @@ function fieldError(name) {
     const errors = serverErrors.value?.[name];
 
     return errors?.length ? errors : undefined;
+}
+
+function modelFieldError(index, name) {
+    return fieldError(`models.${index}.${name}`);
+}
+
+function addModel() {
+    form.models.push({
+        model: '',
+        name: '',
+        tested: false,
+    });
+}
+
+function removeModel(index) {
+    if (form.models.length === 1) {
+        form.models[0].model = '';
+        form.models[0].name = '';
+        form.models[0].tested = false;
+        return;
+    }
+
+    form.models.splice(index, 1);
+}
+
+function markModelDirty(model) {
+    model.tested = false;
+}
+
+function markAllModelsDirty() {
+    form.models.forEach(markModelDirty);
+}
+
+function setModelError(index, errors) {
+    serverErrors.value = {
+        ...serverErrors.value,
+        [`models.${index}.model`]: errors,
+    };
+}
+
+async function testModel(index) {
+    const model = form.models[index];
+
+    if (!model?.model.trim()) {
+        setModelError(index, ['Enter a model ID before testing.']);
+        return;
+    }
+
+    testingModelIndex.value = index;
+    setModelError(index, undefined);
+
+    try {
+        await testAiProviderConnection({
+            type: form.type,
+            credentials: { ...form.credentials },
+            model: model.model.trim(),
+        });
+
+        model.tested = true;
+
+        toast.success('Model test passed', {
+            description: `${model.model.trim()} accepted the current provider credentials.`,
+        });
+    } catch (error) {
+        model.tested = false;
+
+        if (error.status === 422 && error.data?.errors) {
+            const errors = { ...error.data.errors };
+            const modelErrors = errors.model ?? ['Could not test this model.'];
+
+            delete errors.model;
+
+            serverErrors.value = {
+                ...serverErrors.value,
+                ...errors,
+                [`models.${index}.model`]: modelErrors,
+            };
+            return;
+        }
+
+        toast.error('Could not test model', {
+            description: error.message,
+        });
+    } finally {
+        testingModelIndex.value = null;
+    }
 }
 
 function syncSlugFromName() {
@@ -91,6 +197,17 @@ watch(
     },
 );
 
+watch(
+    () => form.type,
+    markAllModelsDirty,
+);
+
+watch(
+    () => form.credentials,
+    markAllModelsDirty,
+    { deep: true },
+);
+
 watch(open, (isOpen) => {
     if (!isOpen) {
         resetForm();
@@ -102,12 +219,27 @@ async function submit() {
     serverErrors.value = {};
 
     try {
+        const models = form.models
+            .map((model) => ({
+                model: model.model.trim(),
+                name: model.name.trim() || null,
+            }))
+            .filter((model) => model.model);
+
+        if (!models.length) {
+            serverErrors.value = {
+                models: ['Add at least one model to test this provider.'],
+            };
+            return;
+        }
+
         const provider = await createAiProvider({
             slug: form.slug,
             name: form.name,
             description: form.description || null,
             type: form.type,
             credentials: { ...form.credentials },
+            models,
             is_active: form.is_active,
         });
 
@@ -160,7 +292,7 @@ async function submit() {
                 <DialogHeader class="border-b px-5 py-4 text-left">
                     <DialogTitle>New AI provider</DialogTitle>
                     <DialogDescription>
-                        Connect a model vendor with encrypted credentials. You can attach models after the provider is saved.
+                        Connect a model vendor with encrypted credentials and the models it supports.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -242,6 +374,102 @@ async function submit() {
                         </template>
 
                         <Field class="sm:col-span-2">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="space-y-1">
+                                    <FieldLabel>Models</FieldLabel>
+                                    <p class="text-sm text-muted-foreground">
+                                        Add at least one model. Use Test to verify credentials for each model before creating the provider.
+                                    </p>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    class="app-soft-control shrink-0"
+                                    @click="addModel"
+                                >
+                                    <PlusIcon class="size-4" />
+                                    Add model
+                                </Button>
+                            </div>
+
+                            <div class="mt-3 space-y-3">
+                                <div
+                                    v-for="(model, index) in form.models"
+                                    :key="index"
+                                    class="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                                >
+                                    <Field>
+                                        <div class="flex items-center gap-2">
+                                            <FieldLabel :for="`provider-model-${index}`">
+                                                Model ID
+                                            </FieldLabel>
+                                            <Badge
+                                                v-if="model.tested"
+                                                variant="outline"
+                                                class="border-emerald-200 bg-emerald-50 text-emerald-700"
+                                            >
+                                                Tested
+                                            </Badge>
+                                        </div>
+                                        <Input
+                                            :id="`provider-model-${index}`"
+                                            v-model="model.model"
+                                            autocomplete="off"
+                                            :placeholder="modelPlaceholder"
+                                            :aria-invalid="!!modelFieldError(index, 'model')"
+                                            @input="markModelDirty(model)"
+                                        />
+                                        <FieldError :errors="modelFieldError(index, 'model')" />
+                                    </Field>
+
+                                    <Field>
+                                        <FieldLabel :for="`provider-model-name-${index}`">
+                                            Display name
+                                        </FieldLabel>
+                                        <Input
+                                            :id="`provider-model-name-${index}`"
+                                            v-model="model.name"
+                                            autocomplete="off"
+                                            :placeholder="displayNamePlaceholder"
+                                            :aria-invalid="!!modelFieldError(index, 'name')"
+                                        />
+                                        <FieldError :errors="modelFieldError(index, 'name')" />
+                                    </Field>
+
+                                    <div class="flex items-end gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            class="app-soft-control"
+                                            :disabled="submitting || testingModelIndex !== null || !model.model.trim()"
+                                            @click="testModel(index)"
+                                        >
+                                            <LoaderCircleIcon
+                                                v-if="testingModelIndex === index"
+                                                class="size-4 animate-spin"
+                                            />
+                                            Test
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            class="text-muted-foreground hover:text-destructive"
+                                            :aria-label="`Remove model ${index + 1}`"
+                                            @click="removeModel(index)"
+                                        >
+                                            <Trash2Icon class="size-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <FieldError :errors="fieldError('models')" />
+                        </Field>
+
+                        <Field class="sm:col-span-2">
                             <FieldLabel for="provider-description">Description</FieldLabel>
                             <Textarea
                                 id="provider-description"
@@ -272,7 +500,11 @@ async function submit() {
                     >
                         Cancel
                     </Button>
-                    <Button type="submit" class="rounded-app-control" :disabled="submitting">
+                    <Button
+                        type="submit"
+                        class="rounded-app-control"
+                        :disabled="submitting || !canSubmit"
+                    >
                         <LoaderCircleIcon
                             v-if="submitting"
                             class="size-4 animate-spin"

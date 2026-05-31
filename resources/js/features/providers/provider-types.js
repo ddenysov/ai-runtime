@@ -3,6 +3,8 @@ export const providerTypes = [
         value: 'gemini',
         label: 'Google Gemini',
         description: 'Gemini models via the Google AI API.',
+        modelPlaceholder: 'gemini-1.5-flash',
+        modelNamePlaceholder: 'Gemini 1.5 Flash',
         credentials: [
             {
                 key: 'key',

@@ -26,6 +26,11 @@ class StoreAiProviderRequest extends FormRequest
             'credentials' => ['required', 'array'],
             'credentials.key' => ['required', 'string'],
             'is_active' => ['sometimes', 'boolean'],
+            'models' => ['required', 'array', 'min:1'],
+            'models.*.model' => ['required', 'string', 'max:255', 'distinct'],
+            'models.*.name' => ['nullable', 'string', 'max:255'],
+            'models.*.description' => ['nullable', 'string'],
+            'models.*.is_active' => ['sometimes', 'boolean'],
         ];
     }
 }

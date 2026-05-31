@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\AiProvider;
 use App\Models\AiProviderModel;
+use App\Neuron\Providers\AiProviderConnectionTester;
 use App\Neuron\Providers\ConfiguredRuntimeAiProviderFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use Mockery;
 use NeuronAI\Providers\Gemini\Gemini;
 use Tests\TestCase;
 
@@ -112,6 +114,12 @@ class AiProviderTest extends TestCase
             'credentials' => [
                 'key' => 'gemini-secret-key',
             ],
+            'models' => [
+                [
+                    'model' => 'gemini-3.1-flash',
+                    'name' => 'Gemini Flash 3.1',
+                ],
+            ],
             'is_active' => true,
         ]);
 
@@ -121,6 +129,8 @@ class AiProviderTest extends TestCase
             ->assertJsonPath('slug', 'work-gemini')
             ->assertJsonPath('type', 'gemini')
             ->assertJsonPath('masked_credentials.key', 'gemi******-key')
+            ->assertJsonPath('models.0.model', 'gemini-3.1-flash')
+            ->assertJsonPath('models.0.name', 'Gemini Flash 3.1')
             ->assertJsonMissing(['credentials']);
 
         $this->assertDatabaseHas('ai_providers', [
@@ -129,6 +139,55 @@ class AiProviderTest extends TestCase
             'type' => 'gemini',
             'is_active' => true,
         ]);
+        $this->assertDatabaseHas('ai_provider_models', [
+            'slug' => 'work-gemini-gemini-3-1-flash',
+            'name' => 'Gemini Flash 3.1',
+            'model' => 'gemini-3.1-flash',
+        ]);
+    }
+
+    public function test_can_test_ai_provider_connection_via_api(): void
+    {
+        $this->mock(AiProviderConnectionTester::class, function ($mock): void {
+            $mock
+                ->shouldReceive('assertProviderValid')
+                ->once()
+                ->with(Mockery::type(AiProvider::class), 'gemini-3.1-flash');
+        });
+
+        $response = $this->postJson('/api/ai-providers/test-connection', [
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('message', 'Provider connection is valid.');
+    }
+
+    public function test_test_ai_provider_connection_api_returns_validation_error_when_connection_fails(): void
+    {
+        $this->mock(AiProviderConnectionTester::class, function ($mock): void {
+            $mock
+                ->shouldReceive('assertProviderValid')
+                ->once()
+                ->andThrow(new InvalidArgumentException('Invalid API key.'));
+        });
+
+        $response = $this->postJson('/api/ai-providers/test-connection', [
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'bad-key',
+            ],
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['model']);
     }
 
     public function test_create_ai_provider_api_validates_payload(): void
@@ -142,7 +201,7 @@ class AiProviderTest extends TestCase
 
         $response
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['slug', 'name', 'type', 'credentials.key']);
+            ->assertJsonValidationErrors(['slug', 'name', 'type', 'credentials.key', 'models']);
     }
 
     public function test_can_list_ai_providers_with_search_filters_sorting_and_pagination(): void
@@ -201,6 +260,42 @@ class AiProviderTest extends TestCase
 
         $this->assertArrayNotHasKey('credentials', $response->json('data.0'));
         $this->assertTrue($sandbox->is(AiProvider::query()->where('slug', 'sandbox-gemini')->first()));
+    }
+
+    public function test_can_delete_ai_provider_via_api(): void
+    {
+        $provider = AiProvider::query()->create([
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+        ]);
+
+        $provider->models()->create([
+            'slug' => 'work-gemini-gemini-3-1-flash',
+            'name' => 'Gemini Flash 3.1',
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response = $this->deleteJson("/api/ai-providers/{$provider->id}");
+
+        $response->assertNoContent();
+
+        $this->assertDatabaseMissing('ai_providers', [
+            'id' => $provider->id,
+        ]);
+        $this->assertDatabaseMissing('ai_provider_models', [
+            'ai_provider_id' => $provider->id,
+        ]);
+    }
+
+    public function test_delete_ai_provider_api_returns_not_found_for_missing_provider(): void
+    {
+        $response = $this->deleteJson('/api/ai-providers/999999');
+
+        $response->assertNotFound();
     }
 
     public function test_can_sort_ai_providers_descending(): void

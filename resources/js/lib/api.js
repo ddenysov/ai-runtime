@@ -63,3 +63,16 @@ export function createAiProvider(payload) {
         body: JSON.stringify(payload),
     });
 }
+
+export function deleteAiProvider(id) {
+    return apiFetch(`/api/ai-providers/${id}`, {
+        method: 'DELETE',
+    });
+}
+
+export function testAiProviderConnection(payload) {
+    return apiFetch('/api/ai-providers/test-connection', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
