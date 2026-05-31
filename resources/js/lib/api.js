@@ -176,6 +176,38 @@ export function agentChatEventsUrl(id, runId) {
     return `/api/agents/${id}/chat/${runId}/events`;
 }
 
+export function listAgentRuns({
+    search,
+    state,
+    agentSlug,
+    contextId,
+    sort,
+    page,
+    perPage,
+} = {}) {
+    const params = new URLSearchParams();
+
+    appendQueryParam(params, 'filter[search]', search);
+    appendQueryParam(params, 'filter[state]', state);
+    appendQueryParam(params, 'filter[agent_slug]', agentSlug);
+    appendQueryParam(params, 'filter[context_id]', contextId);
+    appendQueryParam(params, 'sort', sort);
+    appendQueryParam(params, 'page', page);
+    appendQueryParam(params, 'per_page', perPage);
+
+    const query = params.toString();
+
+    return apiFetch(`/api/agent-runs${query ? `?${query}` : ''}`);
+}
+
+export function getAgentRun(runId) {
+    return apiFetch(`/api/agent-runs/${runId}`);
+}
+
+export function getAgentRunContext(agentId, contextId) {
+    return apiFetch(`/api/agents/${agentId}/runs/${contextId}`);
+}
+
 export function deleteAgent(id) {
     return apiFetch(`/api/agents/${id}`, {
         method: 'DELETE',

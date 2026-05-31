@@ -5,6 +5,7 @@ use App\A2A\Http\A2ANotificationController;
 use App\A2A\Http\AgentCardController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
+use App\Http\Controllers\AgentRunController;
 use App\Http\Controllers\AiProviderController;
 use Illuminate\Support\Facades\Route;
 
