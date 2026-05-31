@@ -3,11 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\Agent;
+use App\Models\AgentRun;
 use App\Models\AiProvider;
 use App\Models\AiProviderModel;
+use App\Neuron\Providers\EchoProvider;
+use App\Neuron\Providers\RuntimeAiProviderFactory;
 use App\Neuron\RuntimeAgentDefinitionRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
+use NeuronAI\Providers\AIProviderInterface;
 use Tests\TestCase;
 
 class AgentTest extends TestCase
@@ -162,6 +166,69 @@ class AgentTest extends TestCase
             ->assertJsonPath('versions.0.version', 1);
     }
 
+    public function test_can_start_agent_chat_run_via_api(): void
+    {
+        $this->bindProvider(new EchoProvider);
+        $agent = Agent::query()->create([
+            'slug' => 'chat-assistant',
+            'name' => 'Chat Assistant',
+            'ai_provider_model_id' => $this->providerModel()->id,
+            'instructions' => ['background' => ['Answer chat prompts.']],
+            'is_active' => true,
+        ]);
+
+        $response = $this->postJson("/api/agents/{$agent->id}/chat", [
+            'message' => 'hello from chat',
+        ]);
+
+        $response
+            ->assertAccepted()
+            ->assertJsonStructure([
+                'run_id',
+                'task_id',
+                'stream_url',
+                'snapshot' => [
+                    'run' => ['id', 'state'],
+                    'task' => ['id', 'state', 'artifact'],
+                    'terminal',
+                ],
+            ])
+            ->assertJsonPath('snapshot.run.state', 'completed')
+            ->assertJsonPath('snapshot.task.state', 'COMPLETED')
+            ->assertJsonPath('snapshot.terminal', true);
+
+        $run = AgentRun::query()->findOrFail($response->json('run_id'));
+
+        $this->assertSame('chat-assistant', $run->agent_slug);
+        $this->assertStringContainsString('hello from chat', $run->output['message']);
+    }
+
+    public function test_agent_chat_events_stream_completed_run_snapshot(): void
+    {
+        $this->bindProvider(new EchoProvider);
+        $agent = Agent::query()->create([
+            'slug' => 'stream-assistant',
+            'name' => 'Stream Assistant',
+            'ai_provider_model_id' => $this->providerModel()->id,
+            'instructions' => ['background' => ['Answer stream prompts.']],
+            'is_active' => true,
+        ]);
+
+        $chatResponse = $this->postJson("/api/agents/{$agent->id}/chat", [
+            'message' => 'stream this answer',
+        ]);
+
+        $response = $this->get($chatResponse->json('stream_url'));
+        $content = $response->streamedContent();
+
+        $response
+            ->assertOk()
+            ->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
+        $this->assertStringContainsString('data: ', $content);
+        $this->assertStringContainsString('"state":"COMPLETED"', $content);
+        $this->assertStringContainsString('stream this answer', $content);
+    }
+
     public function test_runtime_definition_repository_resolves_active_database_agent_before_config(): void
     {
         $providerModel = $this->providerModel();
@@ -238,5 +305,21 @@ class AgentTest extends TestCase
             'model' => uniqid('gemini-3.1-flash-'),
             'is_active' => $isActive,
         ]);
+    }
+
+    private function bindProvider(AIProviderInterface $provider): void
+    {
+        $this->app->bind(
+            RuntimeAiProviderFactory::class,
+            fn () => new class($provider) implements RuntimeAiProviderFactory
+            {
+                public function __construct(private readonly AIProviderInterface $provider) {}
+
+                public function make(array $definition): AIProviderInterface
+                {
+                    return $this->provider;
+                }
+            },
+        );
     }
 }

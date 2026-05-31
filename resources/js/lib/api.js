@@ -142,6 +142,17 @@ export function getAgent(id) {
     return apiFetch(`/api/agents/${id}`);
 }
 
+export function sendAgentChatMessage(id, message) {
+    return apiFetch(`/api/agents/${id}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+    });
+}
+
+export function agentChatEventsUrl(id, runId) {
+    return `/api/agents/${id}/chat/${runId}/events`;
+}
+
 export function deleteAgent(id) {
     return apiFetch(`/api/agents/${id}`, {
         method: 'DELETE',

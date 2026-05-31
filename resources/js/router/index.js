@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import AgentChat from '@/pages/AgentChat.vue';
 import AgentDetails from '@/pages/AgentDetails.vue';
 import Agents from '@/pages/Agents.vue';
 import Index from '@/pages/Index.vue';
@@ -18,6 +19,12 @@ const routes = [
         path: '/agents/:agentId',
         name: 'agent-details',
         component: AgentDetails,
+        props: true,
+    },
+    {
+        path: '/agents/:agentId/chat',
+        name: 'agent-chat',
+        component: AgentChat,
         props: true,
     },
 ];

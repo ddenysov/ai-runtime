@@ -11,6 +11,7 @@ import {
     FileJsonIcon,
     HistoryIcon,
     LoaderCircleIcon,
+    MessageCircleIcon,
     RefreshCcwIcon,
     Settings2Icon,
     WrenchIcon,
@@ -209,6 +210,15 @@ function goBack() {
     router.push({ name: 'agents' });
 }
 
+function openChat() {
+    router.push({
+        name: 'agent-chat',
+        params: {
+            agentId: props.agentId,
+        },
+    });
+}
+
 function formatInstructionSections(instructions = {}) {
     const knownKeys = ['background', 'steps', 'output'];
     const extraKeys = Object.keys(instructions ?? {})
@@ -384,6 +394,14 @@ onMounted(fetchAgent);
                                 </div>
 
                                 <div class="flex flex-wrap gap-2 xl:justify-end">
+                                    <Button
+                                        class="rounded-app-control"
+                                        :disabled="!agent.is_active"
+                                        @click="openChat"
+                                    >
+                                        <MessageCircleIcon class="size-4" />
+                                        Chat
+                                    </Button>
                                     <Button
                                         v-if="a2aCardUrl"
                                         as="a"
