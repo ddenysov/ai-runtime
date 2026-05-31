@@ -17,16 +17,13 @@ class RuntimeAgentFactory
     public function __construct(
         private readonly AgentCardFactory $agentCards,
         private readonly RuntimeAiProviderFactory $providers,
+        private readonly RuntimeAgentDefinitionRepository $definitions,
     ) {}
 
     public function make(?string $slug = null, ?RuntimeAgentContext $context = null): Agent
     {
         $slug ??= config('runtime-agents.default');
-        $definition = config("runtime-agents.agents.{$slug}");
-
-        if (! is_array($definition)) {
-            throw new InvalidArgumentException("Runtime agent [{$slug}] is not configured.");
-        }
+        $definition = $this->definitions->require($slug);
 
         $definition['available_subagent_cards'] = $this->summarizeSubagents($definition);
 

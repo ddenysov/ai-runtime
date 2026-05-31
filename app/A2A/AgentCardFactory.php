@@ -2,15 +2,23 @@
 
 namespace App\A2A;
 
+use App\Neuron\RuntimeAgentDefinitionRepository;
 use Illuminate\Support\Arr;
+use InvalidArgumentException;
 
 class AgentCardFactory
 {
+    public function __construct(
+        private readonly RuntimeAgentDefinitionRepository $definitions,
+    ) {}
+
     public function make(string $agentSlug): array
     {
-        $definition = config("runtime-agents.agents.{$agentSlug}");
-
-        abort_if(! is_array($definition), 404, "Runtime agent [{$agentSlug}] is not configured.");
+        try {
+            $definition = $this->definitions->require($agentSlug);
+        } catch (InvalidArgumentException) {
+            abort(404, "Runtime agent [{$agentSlug}] is not configured.");
+        }
 
         return [
             'name' => $definition['name'] ?? $agentSlug,

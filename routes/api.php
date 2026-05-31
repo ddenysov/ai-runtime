@@ -3,8 +3,13 @@
 use App\A2A\Http\A2AJsonRpcController;
 use App\A2A\Http\A2ANotificationController;
 use App\A2A\Http\AgentCardController;
+use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AiProviderController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/agents', [AgentController::class, 'index']);
+Route::post('/agents', [AgentController::class, 'store']);
+Route::delete('/agents/{agent}', [AgentController::class, 'destroy']);
 
 Route::get('/ai-providers', [AiProviderController::class, 'index']);
 Route::post('/ai-providers/test-connection', [AiProviderController::class, 'testConnection']);

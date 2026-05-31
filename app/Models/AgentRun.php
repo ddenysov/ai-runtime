@@ -13,6 +13,7 @@ class AgentRun extends Model
     protected $fillable = [
         'id',
         'agent_slug',
+        'agent_version_id',
         'state',
         'input',
         'output',

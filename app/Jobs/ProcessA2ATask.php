@@ -13,6 +13,7 @@ use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\TaskPayloadFactory;
 use App\Models\A2AChildTask;
 use App\Models\A2ATask;
+use App\Models\Agent;
 use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
@@ -316,12 +317,22 @@ class ProcessA2ATask implements ShouldQueue
             ['id' => $runId],
             [
                 'agent_slug' => $agentSlug,
+                'agent_version_id' => $this->currentAgentVersionId($agentSlug),
                 'state' => 'submitted',
                 'input' => [
                     'a2a_task_id' => $task['id'],
                 ],
             ],
         );
+    }
+
+    private function currentAgentVersionId(string $agentSlug): ?int
+    {
+        $agent = Agent::query()
+            ->where('slug', $agentSlug)
+            ->first();
+
+        return $agent?->versions()->latest('version')->value('id');
     }
 
     private function completeChildTaskIfNeeded(array $task, array $artifact): void

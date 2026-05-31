@@ -44,6 +44,7 @@ class AiProviderController extends Controller
                 'updated_at',
             )
             ->allowedIncludes(
+                'models',
                 AllowedInclude::count('modelsCount'),
             )
             ->defaultSort('-updated_at')

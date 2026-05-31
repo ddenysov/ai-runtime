@@ -17,8 +17,8 @@ export const workspaces = [
 
 export const navigation = [
     { label: 'Overview', icon: LayoutDashboardIcon, active: false },
-    { label: 'Providers', icon: ServerIcon, active: true },
-    { label: 'Agents', icon: BotIcon, active: false },
+    { label: 'Providers', icon: ServerIcon, active: true, route: '/' },
+    { label: 'Agents', icon: BotIcon, active: false, route: '/agents' },
     { label: 'MCP Workflows', icon: WorkflowIcon, active: false },
     { label: 'Knowledge Bases', icon: DatabaseIcon, active: false },
     { label: 'Tenants & Users', icon: UsersIcon, active: false },

@@ -3,6 +3,7 @@
 namespace App\A2A;
 
 use App\Jobs\ProcessA2ATask;
+use App\Models\Agent;
 use App\Models\AgentRun;
 use Illuminate\Support\Str;
 
@@ -35,6 +36,7 @@ class SendMessageAction
             ['id' => $runId],
             [
                 'agent_slug' => $agentSlug,
+                'agent_version_id' => $this->currentAgentVersionId($agentSlug),
                 'state' => 'submitted',
                 'input' => [
                     'a2a_task_id' => $task['id'],
@@ -52,5 +54,14 @@ class SendMessageAction
         ProcessA2ATask::dispatch($task['id']);
 
         return $task;
+    }
+
+    private function currentAgentVersionId(string $agentSlug): ?int
+    {
+        $agent = Agent::query()
+            ->where('slug', $agentSlug)
+            ->first();
+
+        return $agent?->versions()->latest('version')->value('id');
     }
 }
