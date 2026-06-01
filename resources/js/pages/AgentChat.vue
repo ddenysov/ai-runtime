@@ -150,12 +150,12 @@ async function submitMessage() {
     await sendChatContent(content);
 }
 
-async function sendChatContent(content) {
+async function sendChatContent(content, existingUserMessage = null) {
     if (!content || sending.value) {
         return;
     }
 
-    const userMessageId = crypto.randomUUID();
+    const userMessageId = existingUserMessage?.id ?? crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
     sending.value = true;
     lastFailedUserMessageId.value = '';
@@ -163,12 +163,15 @@ async function sendChatContent(content) {
     closeStream();
     ensureContextRoute();
 
-    messages.value.push({
-        id: userMessageId,
-        role: 'user',
-        content,
-        createdAt: new Date(),
-    });
+    if (!existingUserMessage) {
+        messages.value.push({
+            id: userMessageId,
+            role: 'user',
+            content,
+            createdAt: new Date(),
+        });
+    }
+
     messages.value.push({
         id: assistantMessageId,
         role: 'assistant',
@@ -272,7 +275,7 @@ function canRetryMessage(message) {
 }
 
 function retryMessage(message) {
-    sendChatContent(message.content);
+    sendChatContent(message.content, message);
 }
 
 function resumeLatestRun(latestRun) {

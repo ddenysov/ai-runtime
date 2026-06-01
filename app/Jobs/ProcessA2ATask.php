@@ -297,12 +297,13 @@ class ProcessA2ATask implements ShouldQueue
      */
     private function initialMessages(AgentRun $run, string $input): array
     {
-        $hasPersistedUserMessage = AgentChatMessage::query()
-            ->where('thread_id', "{$run->agent_slug}:{$run->id}")
-            ->where('role', 'user')
-            ->exists();
+        $contextId = $run->input['context_id'] ?? $run->id;
+        $latestPersistedRole = AgentChatMessage::query()
+            ->where('thread_id', "{$run->agent_slug}:{$contextId}")
+            ->latest('id')
+            ->value('role');
 
-        return $hasPersistedUserMessage ? [] : [new UserMessage($input)];
+        return $latestPersistedRole === 'user' ? [] : [new UserMessage($input)];
     }
 
     private function resolveRun(array $task, string $agentSlug): AgentRun
