@@ -19,7 +19,7 @@ export const navigation = [
     { label: 'Overview', icon: LayoutDashboardIcon, active: false },
     { label: 'Providers', icon: ServerIcon, active: true, route: '/' },
     { label: 'Agents', icon: BotIcon, active: false, route: '/agents' },
-    { label: 'MCP Workflows', icon: WorkflowIcon, active: false },
+    { label: 'MCP Servers', icon: WorkflowIcon, active: false, route: '/mcp-servers' },
     { label: 'Knowledge Bases', icon: DatabaseIcon, active: false },
     { label: 'Tenants & Users', icon: UsersIcon, active: false },
     { label: 'Security', icon: ShieldCheckIcon, active: false },

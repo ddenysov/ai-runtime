@@ -4,6 +4,7 @@ import AgentChatHistory from '@/pages/AgentChatHistory.vue';
 import AgentDetails from '@/pages/AgentDetails.vue';
 import Agents from '@/pages/Agents.vue';
 import Index from '@/pages/Index.vue';
+import McpServers from '@/pages/McpServers.vue';
 
 const routes = [
     {
@@ -33,6 +34,11 @@ const routes = [
         name: 'agent-chat',
         component: AgentChat,
         props: true,
+    },
+    {
+        path: '/mcp-servers',
+        name: 'mcp-servers',
+        component: McpServers,
     },
 ];
 

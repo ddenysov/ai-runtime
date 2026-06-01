@@ -79,6 +79,20 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'mcp_agent' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/mcp-agent.log'),
+            'level' => env('MCP_AGENT_LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
+        ],
+
+        'mcp_stdio_test' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/mcp-stdio-test.log'),
+            'level' => env('MCP_STDIO_TEST_LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

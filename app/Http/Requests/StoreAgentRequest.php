@@ -2,9 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Mcp\Models\McpServer;
 use App\Models\AiProviderModel;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class StoreAgentRequest extends FormRequest
@@ -47,9 +47,14 @@ class StoreAgentRequest extends FormRequest
             'subagents' => ['sometimes', 'array'],
             'subagents.*' => ['required', 'string', 'max:255', 'regex:/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/', 'distinct'],
             'tools' => ['sometimes', 'array'],
-            'tools.*.slug' => ['required', 'string', Rule::in(['remote_a2a_agent', 'get_agent_card']), 'distinct'],
+            'tools.*.slug' => ['required', 'string', 'max:255', 'distinct'],
             'tools.*.is_enabled' => ['sometimes', 'boolean'],
             'tools.*.config' => ['nullable', 'array'],
+            'tools.*.config.server_uuid' => ['sometimes', 'string', 'uuid'],
+            'tools.*.config.tool_name' => ['sometimes', 'string', 'max:255'],
+            'tools.*.config.title' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'tools.*.config.description' => ['sometimes', 'nullable', 'string'],
+            'tools.*.config.input_schema' => ['sometimes', 'nullable', 'array'],
             'input_schema' => ['nullable', 'array'],
             'output_schema' => ['nullable', 'array'],
             'temperature' => ['nullable', 'numeric', 'min:0', 'max:2'],
@@ -78,6 +83,56 @@ class StoreAgentRequest extends FormRequest
 
                 if (! $isAvailable) {
                     $validator->errors()->add('ai_provider_model_id', 'The selected provider model is inactive or unavailable.');
+                }
+            },
+            function (Validator $validator): void {
+                $tools = $this->input('tools', []);
+                if (! is_array($tools)) {
+                    return;
+                }
+
+                foreach ($tools as $index => $tool) {
+                    if (! is_array($tool)) {
+                        continue;
+                    }
+
+                    $slug = $tool['slug'] ?? null;
+                    if (! is_string($slug)) {
+                        continue;
+                    }
+
+                    if (in_array($slug, ['remote_a2a_agent', 'get_agent_card'], true)) {
+                        continue;
+                    }
+
+                    if (! str_starts_with($slug, 'mcp:')) {
+                        $validator->errors()->add("tools.{$index}.slug", 'Unsupported runtime tool.');
+
+                        continue;
+                    }
+
+                    if (! (bool) ($tool['is_enabled'] ?? false)) {
+                        continue;
+                    }
+
+                    $config = $tool['config'] ?? [];
+                    $serverUuid = is_array($config) ? ($config['server_uuid'] ?? null) : null;
+                    $toolName = is_array($config) ? ($config['tool_name'] ?? null) : null;
+
+                    if (! is_string($serverUuid) || ! is_string($toolName)) {
+                        $validator->errors()->add("tools.{$index}.config", 'Enabled MCP tools require server_uuid and tool_name.');
+
+                        continue;
+                    }
+
+                    $serverExists = McpServer::query()
+                        ->where('uuid', $serverUuid)
+                        ->where('enabled', true)
+                        ->exists();
+
+                    if (! $serverExists) {
+                        $validator->errors()->add("tools.{$index}.config.server_uuid", 'The selected MCP server is unavailable.');
+                    }
                 }
             },
         ];

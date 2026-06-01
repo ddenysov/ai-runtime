@@ -22,7 +22,12 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { createAgent, listAiProviders } from '@/lib/api';
+import {
+    createAgent,
+    listAiProviders,
+    listMcpServers,
+    listMcpServerTools,
+} from '@/lib/api';
 import {
     commaList,
     linesToList,
@@ -44,6 +49,14 @@ const slugFieldActive = ref(false);
 const serverErrors = ref({});
 const providerError = ref('');
 const providerModels = ref([]);
+const discoveredMcpTools = ref([]);
+const loadingMcpTools = ref(false);
+const mcpToolsError = ref('');
+
+const availableTools = computed(() => [
+    ...runtimeTools,
+    ...discoveredMcpTools.value,
+]);
 
 const form = reactive({
     name: '',
@@ -98,6 +111,9 @@ function resetForm() {
         slug: tool.slug,
         is_enabled: false,
     }));
+    discoveredMcpTools.value = [];
+    loadingMcpTools.value = false;
+    mcpToolsError.value = '';
     slugTouched.value = false;
     slugFieldActive.value = false;
     serverErrors.value = {};
@@ -172,6 +188,57 @@ async function fetchProviderModels() {
     }
 }
 
+async function loadMcpTools() {
+    loadingMcpTools.value = true;
+    mcpToolsError.value = '';
+
+    try {
+        const response = await listMcpServers({
+            enabled: true,
+            perPage: 100,
+        });
+
+        const servers = response.data ?? [];
+        const tools = [];
+
+        for (const server of servers) {
+            const toolResponse = await listMcpServerTools(server.uuid);
+
+            for (const tool of toolResponse.data ?? []) {
+                tools.push({
+                    slug: `mcp:${server.uuid}:${tool.name}`,
+                    label: `${server.name}: ${tool.title || tool.name}`,
+                    description: tool.description || `Call ${tool.name} through ${server.name}.`,
+                    config: {
+                        server_uuid: server.uuid,
+                        server_name: server.name,
+                        tool_name: tool.name,
+                        title: tool.title,
+                        description: tool.description,
+                        input_schema: tool.input_schema ?? {},
+                    },
+                });
+            }
+        }
+
+        discoveredMcpTools.value = tools;
+
+        for (const tool of tools) {
+            if (!form.tools.some((item) => item.slug === tool.slug)) {
+                form.tools.push({
+                    slug: tool.slug,
+                    is_enabled: false,
+                    config: tool.config,
+                });
+            }
+        }
+    } catch (error) {
+        mcpToolsError.value = error.message;
+    } finally {
+        loadingMcpTools.value = false;
+    }
+}
+
 watch(
     () => form.name,
     () => {
@@ -218,6 +285,7 @@ async function submit() {
             tools: form.tools.map((tool) => ({
                 slug: tool.slug,
                 is_enabled: tool.is_enabled,
+                config: tool.config ?? null,
             })),
             input_schema: inputSchema,
             output_schema: outputSchema,
@@ -382,7 +450,26 @@ async function submit() {
                         </Field>
 
                         <Field class="sm:col-span-2">
-                            <FieldLabel>Tools</FieldLabel>
+                            <div class="flex items-center justify-between gap-3">
+                                <FieldLabel>Tools</FieldLabel>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    class="app-soft-control"
+                                    :disabled="loadingMcpTools"
+                                    @click="loadMcpTools"
+                                >
+                                    <LoaderCircleIcon
+                                        v-if="loadingMcpTools"
+                                        class="size-4 animate-spin"
+                                    />
+                                    Load MCP tools
+                                </Button>
+                            </div>
+                            <p v-if="mcpToolsError" class="mt-2 text-sm text-destructive">
+                                {{ mcpToolsError }}
+                            </p>
                             <div class="mt-2 grid gap-3 sm:grid-cols-2">
                                 <div
                                     v-for="tool in form.tools"
@@ -392,10 +479,10 @@ async function submit() {
                                     <div class="flex items-start justify-between gap-3">
                                         <div>
                                             <p class="font-medium">
-                                                {{ runtimeTools.find((item) => item.slug === tool.slug)?.label }}
+                                                {{ availableTools.find((item) => item.slug === tool.slug)?.label }}
                                             </p>
                                             <p class="app-muted-text mt-1 text-sm">
-                                                {{ runtimeTools.find((item) => item.slug === tool.slug)?.description }}
+                                                {{ availableTools.find((item) => item.slug === tool.slug)?.description }}
                                             </p>
                                         </div>
                                         <Switch v-model:checked="tool.is_enabled" />

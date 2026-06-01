@@ -68,13 +68,7 @@ class AgentController extends Controller
                 'history_context_window' => $agentAttributes['history_context_window'] ?? 50000,
             ]);
 
-            foreach ($tools as $tool) {
-                $agent->tools()->create([
-                    'slug' => $tool['slug'],
-                    'is_enabled' => $tool['is_enabled'] ?? true,
-                    'config' => $tool['config'] ?? null,
-                ]);
-            }
+            $this->syncAgentTools($agent, $tools);
 
             $agent->load(['providerModel.provider', 'tools']);
             $agent->createVersionSnapshot();
@@ -98,7 +92,19 @@ class AgentController extends Controller
 
     public function update(UpdateAgentRequest $request, Agent $agent): JsonResponse
     {
-        $agent->update($request->validated());
+        $validated = $request->validated();
+        $tools = $validated['tools'] ?? null;
+        $agentAttributes = Arr::except($validated, 'tools');
+
+        DB::transaction(function () use ($agent, $agentAttributes, $tools): void {
+            if ($agentAttributes !== []) {
+                $agent->update($agentAttributes);
+            }
+
+            if (is_array($tools)) {
+                $this->syncAgentTools($agent, $tools);
+            }
+        });
 
         return response()->json(
             $agent->load([
@@ -114,5 +120,21 @@ class AgentController extends Controller
         $agent->delete();
 
         return response()->noContent();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $tools
+     */
+    private function syncAgentTools(Agent $agent, array $tools): void
+    {
+        $agent->tools()->delete();
+
+        foreach ($tools as $tool) {
+            $agent->tools()->create([
+                'slug' => $tool['slug'],
+                'is_enabled' => $tool['is_enabled'] ?? true,
+                'config' => $tool['config'] ?? null,
+            ]);
+        }
     }
 }

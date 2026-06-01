@@ -94,8 +94,11 @@ class Agent extends Model
             'subagents' => $this->subagents ?? [],
             'tools' => $this->tools()
                 ->where('is_enabled', true)
-                ->pluck('slug')
-                ->values()
+                ->get()
+                ->map(fn (AgentTool $tool): array => [
+                    'slug' => $tool->slug,
+                    'config' => $tool->config ?? [],
+                ])
                 ->all(),
             'input_schema' => $this->input_schema,
             'output_schema' => $this->output_schema,

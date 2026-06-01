@@ -3,10 +3,13 @@
 namespace App\Neuron;
 
 use App\A2A\AgentCardFactory;
+use App\Mcp\Models\McpServer;
+use App\Mcp\Services\McpStdioToolExecutor;
 use App\Neuron\Agents\ConfigurableRuntimeAgent;
 use App\Neuron\Persistence\LaravelWorkflowPersistence;
 use App\Neuron\Providers\RuntimeAiProviderFactory;
 use App\Neuron\Tools\GetAgentCardTool;
+use App\Neuron\Tools\McpServerTool;
 use App\Neuron\Tools\RemoteA2AAgentTool;
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
@@ -45,12 +48,70 @@ class RuntimeAgentFactory
         $allowedSubagents = $definition['subagents'] ?? [];
 
         return collect($definition['tools'] ?? [])
-            ->map(fn (string $tool): object => match ($tool) {
-                'remote_a2a_agent' => new RemoteA2AAgentTool($context, $allowedSubagents),
-                'get_agent_card' => new GetAgentCardTool($allowedSubagents),
-                default => throw new InvalidArgumentException("Unsupported runtime tool [{$tool}]."),
-            })
+            ->map(fn (mixed $tool): object => $this->makeTool($tool, $context, $allowedSubagents))
             ->all();
+    }
+
+    /**
+     * @param  string[]  $allowedSubagents
+     */
+    private function makeTool(mixed $tool, RuntimeAgentContext $context, array $allowedSubagents): object
+    {
+        [$slug, $config] = $this->normalizeToolDefinition($tool);
+
+        return match (true) {
+            $slug === 'remote_a2a_agent' => new RemoteA2AAgentTool($context, $allowedSubagents),
+            $slug === 'get_agent_card' => new GetAgentCardTool($allowedSubagents),
+            str_starts_with($slug, 'mcp:') => $this->makeMcpTool($slug, $config),
+            default => throw new InvalidArgumentException("Unsupported runtime tool [{$slug}]."),
+        };
+    }
+
+    /**
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private function normalizeToolDefinition(mixed $tool): array
+    {
+        if (is_string($tool)) {
+            return [$tool, []];
+        }
+
+        if (is_array($tool) && is_string($tool['slug'] ?? null)) {
+            $config = $tool['config'] ?? [];
+
+            return [$tool['slug'], is_array($config) ? $config : []];
+        }
+
+        throw new InvalidArgumentException('Invalid runtime tool definition.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function makeMcpTool(string $slug, array $config): McpServerTool
+    {
+        $serverUuid = $config['server_uuid'] ?? null;
+        $toolName = $config['tool_name'] ?? null;
+
+        if (! is_string($serverUuid) || ! is_string($toolName)) {
+            throw new InvalidArgumentException("MCP runtime tool [{$slug}] is missing server_uuid or tool_name.");
+        }
+
+        $server = McpServer::query()
+            ->where('uuid', $serverUuid)
+            ->where('enabled', true)
+            ->first();
+
+        if (! $server instanceof McpServer) {
+            throw new InvalidArgumentException("MCP server [{$serverUuid}] is not available.");
+        }
+
+        return new McpServerTool(
+            server: $server,
+            mcpToolName: $toolName,
+            config: $config,
+            executor: app(McpStdioToolExecutor::class),
+        );
     }
 
     private function summarizeSubagents(array $definition): array

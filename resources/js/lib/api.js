@@ -99,6 +99,55 @@ export function testAiProviderConnection(payload) {
     });
 }
 
+export function listMcpServers({
+    search,
+    enabled,
+    page,
+    perPage,
+} = {}) {
+    const params = new URLSearchParams();
+
+    appendQueryParam(params, 'filter[search]', search);
+    appendQueryParam(params, 'filter[enabled]', enabled);
+    appendQueryParam(params, 'page', page);
+    appendQueryParam(params, 'per_page', perPage);
+
+    const query = params.toString();
+
+    return apiFetch(`/api/mcp-servers${query ? `?${query}` : ''}`);
+}
+
+export function createMcpServer(payload) {
+    return apiFetch('/api/mcp-servers', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function updateMcpServer(uuid, payload) {
+    return apiFetch(`/api/mcp-servers/${uuid}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function deleteMcpServer(uuid, payload) {
+    return apiFetch(`/api/mcp-servers/${uuid}`, {
+        method: 'DELETE',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function testMcpServer(uuid) {
+    return apiFetch(`/api/mcp-servers/${uuid}/test`, {
+        method: 'POST',
+    });
+}
+
+export function listMcpServerTools(uuid) {
+    return apiFetch(`/api/mcp-servers/${uuid}/tools`);
+}
+
 export function listAgents({
     search,
     isActive,

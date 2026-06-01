@@ -6,6 +6,7 @@ use App\A2A\Http\AgentCardController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AiProviderController;
+use App\Mcp\Http\Controllers\McpServerController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/agents', [AgentController::class, 'index']);
@@ -24,6 +25,14 @@ Route::post('/ai-providers', [AiProviderController::class, 'store']);
 Route::get('/ai-providers/{aiProvider}', [AiProviderController::class, 'show']);
 Route::put('/ai-providers/{aiProvider}', [AiProviderController::class, 'update']);
 Route::delete('/ai-providers/{aiProvider}', [AiProviderController::class, 'destroy']);
+
+Route::get('/mcp-servers', [McpServerController::class, 'index']);
+Route::post('/mcp-servers', [McpServerController::class, 'store']);
+Route::get('/mcp-servers/{mcpServer}/tools', [McpServerController::class, 'tools']);
+Route::post('/mcp-servers/{mcpServer}/test', [McpServerController::class, 'test']);
+Route::get('/mcp-servers/{mcpServer}', [McpServerController::class, 'show']);
+Route::put('/mcp-servers/{mcpServer}', [McpServerController::class, 'update']);
+Route::delete('/mcp-servers/{mcpServer}', [McpServerController::class, 'destroy']);
 
 Route::get('/a2a/{agent}/.well-known/agent-card.json', AgentCardController::class);
 
