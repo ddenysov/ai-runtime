@@ -15,6 +15,7 @@ Route::post('/agents/{agent}/chat', [AgentChatController::class, 'store']);
 Route::get('/agents/{agent}/chat/{contextId}', [AgentChatController::class, 'show']);
 Route::get('/agents/{agent}/chat/{run}/events', [AgentChatController::class, 'events'])->name('agents.chat.events');
 Route::get('/agents/{agent}', [AgentController::class, 'show']);
+Route::put('/agents/{agent}', [AgentController::class, 'update']);
 Route::delete('/agents/{agent}', [AgentController::class, 'destroy']);
 
 Route::get('/ai-providers', [AiProviderController::class, 'index']);

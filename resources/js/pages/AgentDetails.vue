@@ -6,17 +6,21 @@ import {
     BotIcon,
     CheckCircle2Icon,
     CircleAlertIcon,
+    CheckIcon,
     ClockIcon,
     Code2Icon,
     FileJsonIcon,
     HistoryIcon,
     LoaderCircleIcon,
     MessageCircleIcon,
+    PencilIcon,
     RefreshCcwIcon,
     Settings2Icon,
     WrenchIcon,
     XCircleIcon,
+    XIcon,
 } from '@lucide/vue';
+import { toast } from 'vue-sonner';
 import AppShell from '@/components/app/AppShell.vue';
 import PageBreadcrumbs from '@/components/app/PageBreadcrumbs.vue';
 import PageHeader from '@/components/app/PageHeader.vue';
@@ -30,8 +34,15 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { getAgent } from '@/lib/api';
+import { getAgent, listAiProviders, updateAgent } from '@/lib/api';
 import { findRuntimeTool } from '@/features/agents/agent-tools';
 import {
     navigation,
@@ -50,6 +61,12 @@ const selectedWorkspace = ref('acme-ai');
 const loading = ref(false);
 const error = ref('');
 const agent = ref(null);
+const editingProviderModel = ref(false);
+const savingProviderModel = ref(false);
+const loadingProviderModels = ref(false);
+const providerModelError = ref('');
+const providerModels = ref([]);
+const selectedProviderModelId = ref('');
 let requestSequence = 0;
 
 const agentNavigation = computed(() => navigation.map((item) => ({
@@ -178,6 +195,91 @@ const schemaBlocks = computed(() => [
     ...block,
     formatted: formatJson(block.value),
 })));
+
+async function fetchProviderModels() {
+    loadingProviderModels.value = true;
+    providerModelError.value = '';
+
+    try {
+        const response = await listAiProviders({
+            isActive: true,
+            includeModelsCount: false,
+            includeModels: true,
+            perPage: 50,
+            sort: 'name',
+        });
+
+        providerModels.value = (response.data ?? [])
+            .flatMap((entry) => (entry.models ?? [])
+                .filter((model) => model.is_active)
+                .map((model) => ({
+                    id: String(model.id),
+                    providerName: entry.name,
+                    name: model.name,
+                    model: model.model,
+                    label: `${entry.name} / ${model.name}`,
+                })));
+    } catch (fetchError) {
+        providerModelError.value = fetchError.message;
+    } finally {
+        loadingProviderModels.value = false;
+    }
+}
+
+function startProviderModelEdit() {
+    selectedProviderModelId.value = providerModel.value?.id
+        ? String(providerModel.value.id)
+        : '';
+    providerModelError.value = '';
+    editingProviderModel.value = true;
+
+    if (!providerModels.value.length) {
+        fetchProviderModels();
+    }
+}
+
+function cancelProviderModelEdit() {
+    editingProviderModel.value = false;
+    providerModelError.value = '';
+    selectedProviderModelId.value = providerModel.value?.id
+        ? String(providerModel.value.id)
+        : '';
+}
+
+async function saveProviderModel() {
+    if (!selectedProviderModelId.value) {
+        providerModelError.value = 'Select a provider model.';
+        return;
+    }
+
+    const currentId = providerModel.value?.id
+        ? String(providerModel.value.id)
+        : '';
+
+    if (selectedProviderModelId.value === currentId) {
+        cancelProviderModelEdit();
+        return;
+    }
+
+    savingProviderModel.value = true;
+    providerModelError.value = '';
+
+    try {
+        const updated = await updateAgent(props.agentId, {
+            ai_provider_model_id: Number(selectedProviderModelId.value),
+        });
+
+        agent.value = updated;
+        editingProviderModel.value = false;
+        toast.success('Provider model updated');
+    } catch (saveError) {
+        const validationMessage = saveError.data?.errors?.ai_provider_model_id?.[0];
+
+        providerModelError.value = validationMessage ?? saveError.message;
+    } finally {
+        savingProviderModel.value = false;
+    }
+}
 
 async function fetchAgent() {
     const sequence = ++requestSequence;
@@ -320,7 +422,10 @@ function titleize(value) {
         .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-watch(() => props.agentId, fetchAgent);
+watch(() => props.agentId, () => {
+    editingProviderModel.value = false;
+    fetchAgent();
+});
 onMounted(fetchAgent);
 </script>
 
@@ -653,28 +758,95 @@ onMounted(fetchAgent);
 
                         <Card class="app-surface">
                             <CardHeader>
-                                <CardTitle>Provider model</CardTitle>
-                                <CardDescription>
-                                    Where this agent sends completion requests.
-                                </CardDescription>
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <CardTitle>Provider model</CardTitle>
+                                        <CardDescription>
+                                            Where this agent sends completion requests.
+                                        </CardDescription>
+                                    </div>
+                                    <Button
+                                        v-if="!editingProviderModel"
+                                        variant="ghost"
+                                        size="sm"
+                                        class="app-soft-control shrink-0"
+                                        @click="startProviderModelEdit"
+                                    >
+                                        <PencilIcon class="size-4" />
+                                        Change
+                                    </Button>
+                                </div>
                             </CardHeader>
                             <CardContent class="space-y-4">
-                                <div>
-                                    <p class="app-muted-text text-sm">Provider</p>
-                                    <p class="mt-1 font-medium">{{ provider?.name ?? 'Unassigned' }}</p>
-                                </div>
-                                <Separator />
-                                <div>
-                                    <p class="app-muted-text text-sm">Model name</p>
-                                    <p class="mt-1 font-medium">{{ providerModel?.name ?? 'Unassigned' }}</p>
-                                </div>
-                                <Separator />
-                                <div>
-                                    <p class="app-muted-text text-sm">Model identifier</p>
-                                    <p class="mt-1 break-all font-mono text-sm">
-                                        {{ providerModel?.model ?? 'Not configured' }}
+                                <div v-if="editingProviderModel" class="space-y-3">
+                                    <div>
+                                        <p class="app-muted-text mb-2 text-sm">Provider model</p>
+                                        <Select
+                                            v-model="selectedProviderModelId"
+                                            :disabled="loadingProviderModels || savingProviderModel"
+                                        >
+                                            <SelectTrigger class="w-full">
+                                                <SelectValue
+                                                    :placeholder="loadingProviderModels ? 'Loading models...' : 'Select active provider model'"
+                                                />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem
+                                                    v-for="option in providerModels"
+                                                    :key="option.id"
+                                                    :value="option.id"
+                                                >
+                                                    {{ option.label }} · {{ option.model }}
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <p v-if="providerModelError" class="text-sm text-destructive">
+                                        {{ providerModelError }}
                                     </p>
+                                    <div class="flex flex-wrap gap-2">
+                                        <Button
+                                            size="sm"
+                                            :disabled="savingProviderModel || loadingProviderModels || !selectedProviderModelId"
+                                            @click="saveProviderModel"
+                                        >
+                                            <LoaderCircleIcon
+                                                v-if="savingProviderModel"
+                                                class="size-4 animate-spin"
+                                            />
+                                            <CheckIcon v-else class="size-4" />
+                                            Save
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            class="app-soft-control"
+                                            :disabled="savingProviderModel"
+                                            @click="cancelProviderModelEdit"
+                                        >
+                                            <XIcon class="size-4" />
+                                            Cancel
+                                        </Button>
+                                    </div>
                                 </div>
+                                <template v-else>
+                                    <div>
+                                        <p class="app-muted-text text-sm">Provider</p>
+                                        <p class="mt-1 font-medium">{{ provider?.name ?? 'Unassigned' }}</p>
+                                    </div>
+                                    <Separator />
+                                    <div>
+                                        <p class="app-muted-text text-sm">Model name</p>
+                                        <p class="mt-1 font-medium">{{ providerModel?.name ?? 'Unassigned' }}</p>
+                                    </div>
+                                    <Separator />
+                                    <div>
+                                        <p class="app-muted-text text-sm">Model identifier</p>
+                                        <p class="mt-1 break-all font-mono text-sm">
+                                            {{ providerModel?.model ?? 'Not configured' }}
+                                        </p>
+                                    </div>
+                                </template>
                             </CardContent>
                         </Card>
 

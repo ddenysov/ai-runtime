@@ -6,6 +6,7 @@ use App\Models\AiProvider;
 use App\Models\AiProviderModel;
 use App\Neuron\Providers\AiProviderConnectionTester;
 use App\Neuron\Providers\ConfiguredRuntimeAiProviderFactory;
+use App\Neuron\Providers\LoggingAiProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -93,7 +94,8 @@ class AiProviderTest extends TestCase
             'ai_provider_model_slug' => 'gemini-flash-31',
         ]);
 
-        $this->assertInstanceOf(Gemini::class, $provider);
+        $this->assertInstanceOf(LoggingAiProvider::class, $provider);
+        $this->assertInstanceOf(Gemini::class, $provider->inner());
     }
 
     public function test_runtime_factory_requires_explicit_provider_reference(): void

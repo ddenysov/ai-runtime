@@ -15,13 +15,17 @@ class ConfiguredRuntimeAiProviderFactory implements RuntimeAiProviderFactory
     {
         $providerModel = $this->resolveProviderModel($definition);
         $provider = $providerModel->provider;
+        $httpCapture = new CapturingAiProviderHttpClient();
 
-        return match ($provider->type) {
+        $providerInstance = match ($provider->type) {
             AiProviderType::GEMINI => new Gemini(
                 key: (string) $provider->credential('key'),
                 model: $providerModel->model,
+                httpClient: $httpCapture,
             ),
         };
+
+        return new LoggingAiProvider($providerInstance, $httpCapture);
     }
 
     private function resolveProviderModel(array $definition): AiProviderModel

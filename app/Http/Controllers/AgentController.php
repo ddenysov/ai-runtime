@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreAgentRequest;
+use App\Http\Requests\UpdateAgentRequest;
 use App\Models\Agent;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -86,6 +87,19 @@ class AgentController extends Controller
 
     public function show(Agent $agent): JsonResponse
     {
+        return response()->json(
+            $agent->load([
+                'providerModel.provider',
+                'tools',
+                'versions' => fn ($query) => $query->latest('version'),
+            ])
+        );
+    }
+
+    public function update(UpdateAgentRequest $request, Agent $agent): JsonResponse
+    {
+        $agent->update($request->validated());
+
         return response()->json(
             $agent->load([
                 'providerModel.provider',

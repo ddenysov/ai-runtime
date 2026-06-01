@@ -37,9 +37,12 @@ class AiProviderConnectionTester
             throw new InvalidArgumentException('Gemini model is required to validate provider credentials.');
         }
 
-        (new Gemini(
+        $httpCapture = new CapturingAiProviderHttpClient();
+
+        (new LoggingAiProvider(new Gemini(
             key: (string) $provider->credential('key'),
             model: $model,
-        ))->chat(new UserMessage('Reply exactly with: OK'));
+            httpClient: $httpCapture,
+        ), $httpCapture))->chat(new UserMessage('Reply exactly with: OK'));
     }
 }

@@ -54,6 +54,7 @@ const activeRunId = ref('');
 const chatContextId = ref(props.contextId || crypto.randomUUID());
 const streamStatus = ref('Idle');
 const messagesPanel = ref(null);
+const lastFailedUserMessageId = ref('');
 let requestSequence = 0;
 let historyRequestSequence = 0;
 let eventSource = null;
@@ -73,6 +74,11 @@ const modelLabel = computed(() => {
     return `${provider.value?.name ?? 'Provider'} / ${providerModel.value.name}`;
 });
 const canSend = computed(() => draft.value.trim().length > 0 && !sending.value && agent.value?.is_active);
+const latestUserMessageId = computed(() => {
+    const latestUserMessage = [...messages.value].reverse().find((message) => message.role === 'user');
+
+    return latestUserMessage?.id ?? '';
+});
 
 async function fetchAgent() {
     const sequence = ++requestSequence;
@@ -140,15 +146,25 @@ async function submitMessage() {
         return;
     }
 
-    const assistantMessageId = crypto.randomUUID();
     draft.value = '';
+    await sendChatContent(content);
+}
+
+async function sendChatContent(content) {
+    if (!content || sending.value) {
+        return;
+    }
+
+    const userMessageId = crypto.randomUUID();
+    const assistantMessageId = crypto.randomUUID();
     sending.value = true;
+    lastFailedUserMessageId.value = '';
     streamStatus.value = 'Submitting';
     closeStream();
     ensureContextRoute();
 
     messages.value.push({
-        id: crypto.randomUUID(),
+        id: userMessageId,
         role: 'user',
         content,
         createdAt: new Date(),
@@ -160,6 +176,7 @@ async function submitMessage() {
         status: 'Submitted',
         createdAt: new Date(),
         pending: true,
+        replyToMessageId: userMessageId,
     });
     scrollToBottom();
 
@@ -232,15 +249,30 @@ function applySnapshot(messageId, snapshot) {
     if (snapshot.run?.last_error_message && snapshot.terminal) {
         message.content = snapshot.run.last_error_message;
         message.failed = true;
+        lastFailedUserMessageId.value = message.replyToMessageId ?? latestUserMessageId.value;
+    } else if (snapshot.terminal) {
+        lastFailedUserMessageId.value = '';
     }
 
     if (snapshot.terminal) {
-        streamStatus.value = 'Complete';
+        streamStatus.value = message.failed ? 'Failed' : 'Complete';
         sending.value = false;
         closeStream();
     }
 
     scrollToBottom();
+}
+
+function canRetryMessage(message) {
+    return message.role === 'user'
+        && message.id === lastFailedUserMessageId.value
+        && message.id === latestUserMessageId.value
+        && !sending.value
+        && agent.value?.is_active;
+}
+
+function retryMessage(message) {
+    sendChatContent(message.content);
 }
 
 function resumeLatestRun(latestRun) {
@@ -285,6 +317,7 @@ function markAssistantFailed(messageId, message) {
         assistantMessage.status = 'Failed';
         assistantMessage.pending = false;
         assistantMessage.failed = true;
+        lastFailedUserMessageId.value = assistantMessage.replyToMessageId ?? latestUserMessageId.value;
     }
 
     streamStatus.value = 'Failed';
@@ -365,6 +398,7 @@ watch(() => props.agentId, () => {
     closeStream();
     messages.value = [];
     activeRunId.value = '';
+    lastFailedUserMessageId.value = '';
     chatContextId.value = props.contextId || crypto.randomUUID();
     streamStatus.value = 'Idle';
     fetchAgent();
@@ -378,6 +412,7 @@ watch(() => props.contextId, (contextId) => {
     closeStream();
     messages.value = [];
     activeRunId.value = '';
+    lastFailedUserMessageId.value = '';
     chatContextId.value = contextId;
     streamStatus.value = 'Idle';
     fetchChatHistory();
@@ -516,6 +551,18 @@ onBeforeUnmount(closeStream);
                                     <p class="mt-2 whitespace-pre-wrap text-sm leading-6">{{ message.content }}</p>
                                     <p class="mt-2 text-xs opacity-60">{{ formatDate(message.createdAt) }}</p>
                                 </div>
+
+                                <Button
+                                    v-if="canRetryMessage(message)"
+                                    type="button"
+                                    variant="outline"
+                                    size="xs"
+                                    class="self-end"
+                                    @click="retryMessage(message)"
+                                >
+                                    <RefreshCcwIcon class="size-3" />
+                                    Retry
+                                </Button>
 
                                 <div
                                     v-if="message.role === 'user'"

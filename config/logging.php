@@ -72,6 +72,13 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'llm' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/llm.log'),
+            'level' => env('LLM_LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

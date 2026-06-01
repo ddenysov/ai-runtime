@@ -153,6 +153,13 @@ export function getAgent(id) {
     return apiFetch(`/api/agents/${id}`);
 }
 
+export function updateAgent(id, payload) {
+    return apiFetch(`/api/agents/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    });
+}
+
 export function listAgentChats({
     id,
     search,
