@@ -179,10 +179,14 @@ export function listAgentChats({
     return apiFetch(`/api/agents/${id}/chats${query ? `?${query}` : ''}`);
 }
 
-export function sendAgentChatMessage(id, message, contextId) {
+export function sendAgentChatMessage(id, message, contextId, options = {}) {
     return apiFetch(`/api/agents/${id}/chat`, {
         method: 'POST',
-        body: JSON.stringify({ message, context_id: contextId }),
+        body: JSON.stringify({
+            message,
+            context_id: contextId,
+            replace_failed_last_message: options.replaceFailedLastMessage ?? false,
+        }),
     });
 }
 

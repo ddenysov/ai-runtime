@@ -31,6 +31,24 @@ export function linesToList(value) {
         .filter(Boolean);
 }
 
+export function listToLines(value) {
+    if (!value) {
+        return '';
+    }
+
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => (typeof item === 'object' ? JSON.stringify(item) : String(item)))
+            .join('\n');
+    }
+
+    if (typeof value === 'string') {
+        return value;
+    }
+
+    return String(value);
+}
+
 export function commaList(value) {
     return value
         .split(',')

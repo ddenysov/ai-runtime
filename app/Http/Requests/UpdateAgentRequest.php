@@ -19,7 +19,14 @@ class UpdateAgentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'ai_provider_model_id' => ['required', 'integer', 'exists:ai_provider_models,id'],
+            'ai_provider_model_id' => ['sometimes', 'integer', 'exists:ai_provider_models,id'],
+            'instructions' => ['sometimes', 'array'],
+            'instructions.background' => ['required_with:instructions', 'array', 'min:1'],
+            'instructions.background.*' => ['required', 'string', 'max:2000'],
+            'instructions.steps' => ['sometimes', 'array'],
+            'instructions.steps.*' => ['required', 'string', 'max:2000'],
+            'instructions.output' => ['sometimes', 'array'],
+            'instructions.output.*' => ['required', 'string', 'max:2000'],
         ];
     }
 
@@ -27,6 +34,10 @@ class UpdateAgentRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
+                if (! $this->has('ai_provider_model_id')) {
+                    return;
+                }
+
                 $providerModelId = $this->integer('ai_provider_model_id');
 
                 if ($providerModelId === 0) {

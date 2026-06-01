@@ -42,8 +42,9 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import { getAgent, listAiProviders, updateAgent } from '@/lib/api';
-import { findRuntimeTool } from '@/features/agents/agent-tools';
+import { findRuntimeTool, linesToList, listToLines } from '@/features/agents/agent-tools';
 import {
     navigation,
     workspaces,
@@ -67,6 +68,10 @@ const loadingProviderModels = ref(false);
 const providerModelError = ref('');
 const providerModels = ref([]);
 const selectedProviderModelId = ref('');
+const editingInstructionKey = ref(null);
+const instructionDraft = ref('');
+const savingInstruction = ref(false);
+const instructionError = ref('');
 let requestSequence = 0;
 
 const agentNavigation = computed(() => navigation.map((item) => ({
@@ -244,6 +249,77 @@ function cancelProviderModelEdit() {
     selectedProviderModelId.value = providerModel.value?.id
         ? String(providerModel.value.id)
         : '';
+}
+
+function startInstructionEdit(section) {
+    editingInstructionKey.value = section.key;
+    instructionDraft.value = listToLines(agent.value?.instructions?.[section.key]);
+    instructionError.value = '';
+}
+
+function cancelInstructionEdit() {
+    editingInstructionKey.value = null;
+    instructionDraft.value = '';
+    instructionError.value = '';
+}
+
+function instructionKeyToList(value) {
+    return linesToList(listToLines(value));
+}
+
+function buildInstructionsPayload(sectionKey, items) {
+    const current = agent.value?.instructions ?? {};
+    const knownKeys = ['background', 'steps', 'output'];
+    const instructions = Object.fromEntries(
+        knownKeys.map((key) => [key, instructionKeyToList(current[key])]),
+    );
+
+    for (const [key, value] of Object.entries(current)) {
+        if (!knownKeys.includes(key)) {
+            instructions[key] = Array.isArray(value) ? value : instructionKeyToList(value);
+        }
+    }
+
+    instructions[sectionKey] = items;
+
+    return instructions;
+}
+
+async function saveInstruction(section) {
+    const items = linesToList(instructionDraft.value);
+    const currentItems = normalizeList(agent.value?.instructions?.[section.key]);
+
+    if (items.join('\n') === currentItems.join('\n')) {
+        cancelInstructionEdit();
+        return;
+    }
+
+    if (section.key === 'background' && !items.length) {
+        instructionError.value = 'Add at least one background instruction.';
+        return;
+    }
+
+    savingInstruction.value = true;
+    instructionError.value = '';
+
+    try {
+        const updated = await updateAgent(props.agentId, {
+            instructions: buildInstructionsPayload(section.key, items),
+        });
+
+        agent.value = updated;
+        editingInstructionKey.value = null;
+        instructionDraft.value = '';
+        toast.success(`${section.label} updated`);
+    } catch (saveError) {
+        const fieldKey = `instructions.${section.key}`;
+        const validationMessage = saveError.data?.errors?.[fieldKey]?.[0]
+            ?? saveError.data?.errors?.['instructions.background']?.[0];
+
+        instructionError.value = validationMessage ?? saveError.message;
+    } finally {
+        savingInstruction.value = false;
+    }
 }
 
 async function saveProviderModel() {
@@ -424,6 +500,7 @@ function titleize(value) {
 
 watch(() => props.agentId, () => {
     editingProviderModel.value = false;
+    cancelInstructionEdit();
     fetchAgent();
 });
 onMounted(fetchAgent);
@@ -576,28 +653,84 @@ onMounted(fetchAgent);
                                 >
                                     <div class="flex items-center justify-between gap-3">
                                         <h3 class="font-medium">{{ section.label }}</h3>
-                                        <Badge variant="outline" class="rounded-full">
-                                            {{ section.items.length }} item{{ section.items.length === 1 ? '' : 's' }}
-                                        </Badge>
+                                        <div class="flex items-center gap-2">
+                                            <Badge variant="outline" class="rounded-full">
+                                                {{ section.items.length }} item{{ section.items.length === 1 ? '' : 's' }}
+                                            </Badge>
+                                            <Button
+                                                v-if="editingInstructionKey !== section.key"
+                                                variant="ghost"
+                                                size="sm"
+                                                class="app-soft-control h-8 px-2"
+                                                :disabled="editingInstructionKey !== null && editingInstructionKey !== section.key"
+                                                @click="startInstructionEdit(section)"
+                                            >
+                                                <PencilIcon class="size-4" />
+                                                Edit
+                                            </Button>
+                                        </div>
                                     </div>
 
-                                    <ol v-if="section.items.length" class="mt-3 space-y-2">
-                                        <li
-                                            v-for="(item, index) in section.items"
-                                            :key="`${section.key}-${index}`"
-                                            class="flex gap-3 text-sm leading-6"
-                                        >
-                                            <span
-                                                class="app-surface-muted mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium"
+                                    <div
+                                        v-if="editingInstructionKey === section.key"
+                                        class="mt-3 space-y-3"
+                                    >
+                                        <Textarea
+                                            v-model="instructionDraft"
+                                            rows="5"
+                                            class="min-h-[7.5rem] resize-y"
+                                            :placeholder="section.key === 'background'
+                                                ? 'One instruction per line'
+                                                : 'One line per item'"
+                                            :disabled="savingInstruction"
+                                        />
+                                        <p v-if="instructionError" class="text-sm text-destructive">
+                                            {{ instructionError }}
+                                        </p>
+                                        <div class="flex flex-wrap gap-2">
+                                            <Button
+                                                size="sm"
+                                                :disabled="savingInstruction"
+                                                @click="saveInstruction(section)"
                                             >
-                                                {{ index + 1 }}
-                                            </span>
-                                            <span>{{ item }}</span>
-                                        </li>
-                                    </ol>
-                                    <p v-else class="app-muted-text mt-3 text-sm">
-                                        Nothing defined for this section yet.
-                                    </p>
+                                                <LoaderCircleIcon
+                                                    v-if="savingInstruction"
+                                                    class="size-4 animate-spin"
+                                                />
+                                                <CheckIcon v-else class="size-4" />
+                                                Save
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                class="app-soft-control"
+                                                :disabled="savingInstruction"
+                                                @click="cancelInstructionEdit"
+                                            >
+                                                <XIcon class="size-4" />
+                                                Cancel
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <template v-else>
+                                        <ol v-if="section.items.length" class="mt-3 space-y-2">
+                                            <li
+                                                v-for="(item, index) in section.items"
+                                                :key="`${section.key}-${index}`"
+                                                class="flex gap-3 text-sm leading-6"
+                                            >
+                                                <span
+                                                    class="app-surface-muted mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium"
+                                                >
+                                                    {{ index + 1 }}
+                                                </span>
+                                                <span>{{ item }}</span>
+                                            </li>
+                                        </ol>
+                                        <p v-else class="app-muted-text mt-3 text-sm">
+                                            Nothing defined for this section yet.
+                                        </p>
+                                    </template>
                                 </div>
                             </CardContent>
                         </Card>

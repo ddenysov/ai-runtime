@@ -55,6 +55,8 @@ const chatContextId = ref(props.contextId || crypto.randomUUID());
 const streamStatus = ref('Idle');
 const messagesPanel = ref(null);
 const lastFailedUserMessageId = ref('');
+const editingRetryMessageId = ref('');
+const retryDraft = ref('');
 let requestSequence = 0;
 let historyRequestSequence = 0;
 let eventSource = null;
@@ -129,6 +131,7 @@ async function fetchChatHistory() {
             content: message.content,
             createdAt: message.created_at ? new Date(message.created_at) : null,
             pending: false,
+            persisted: true,
         }));
         resumeLatestRun(response.latest_run);
         scrollToBottom();
@@ -150,25 +153,39 @@ async function submitMessage() {
     await sendChatContent(content);
 }
 
-async function sendChatContent(content, existingUserMessage = null) {
+async function sendChatContent(content, existingUserMessage = null, options = {}) {
     if (!content || sending.value) {
         return;
     }
 
     const userMessageId = existingUserMessage?.id ?? crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
+    const previousUserMessageContent = existingUserMessage?.content;
+    const previousUserMessageCreatedAt = existingUserMessage?.createdAt;
     sending.value = true;
     lastFailedUserMessageId.value = '';
+    editingRetryMessageId.value = '';
+    retryDraft.value = '';
+    activeRunId.value = '';
     streamStatus.value = 'Submitting';
     closeStream();
     ensureContextRoute();
 
-    if (!existingUserMessage) {
+    if (existingUserMessage) {
+        messages.value = messages.value.filter((message) => !(
+            message.role === 'assistant'
+            && message.replyToMessageId === userMessageId
+            && message.failed
+        ));
+        existingUserMessage.content = content;
+        existingUserMessage.createdAt = new Date();
+    } else {
         messages.value.push({
             id: userMessageId,
             role: 'user',
             content,
             createdAt: new Date(),
+            persisted: false,
         });
     }
 
@@ -184,7 +201,9 @@ async function sendChatContent(content, existingUserMessage = null) {
     scrollToBottom();
 
     try {
-        const response = await sendAgentChatMessage(props.agentId, content, chatContextId.value);
+        const response = await sendAgentChatMessage(props.agentId, content, chatContextId.value, {
+            replaceFailedLastMessage: options.replaceFailedLastMessage ?? false,
+        });
         chatContextId.value = response.context_id ?? chatContextId.value;
         ensureContextRoute();
         activeRunId.value = response.run_id;
@@ -194,6 +213,11 @@ async function sendChatContent(content, existingUserMessage = null) {
             response.stream_url ?? agentChatEventsUrl(props.agentId, response.run_id),
         );
     } catch (submitError) {
+        if (existingUserMessage) {
+            existingUserMessage.content = previousUserMessageContent;
+            existingUserMessage.createdAt = previousUserMessageCreatedAt;
+        }
+
         markAssistantFailed(assistantMessageId, submitError.message);
     }
 }
@@ -275,7 +299,27 @@ function canRetryMessage(message) {
 }
 
 function retryMessage(message) {
-    sendChatContent(message.content, message);
+    sendChatContent(message.content, message, { replaceFailedLastMessage: true });
+}
+
+function startEditingRetryMessage(message) {
+    editingRetryMessageId.value = message.id;
+    retryDraft.value = message.content;
+}
+
+function cancelEditingRetryMessage() {
+    editingRetryMessageId.value = '';
+    retryDraft.value = '';
+}
+
+function retryEditedMessage(message) {
+    const content = retryDraft.value.trim();
+
+    if (!content) {
+        return;
+    }
+
+    sendChatContent(content, message, { replaceFailedLastMessage: true });
 }
 
 function resumeLatestRun(latestRun) {
@@ -288,6 +332,14 @@ function resumeLatestRun(latestRun) {
     activeRunId.value = latestRun.run_id;
 
     if (latestRun.snapshot?.terminal) {
+        if (latestRun.snapshot.run?.last_error_message) {
+            streamStatus.value = 'Failed';
+            lastFailedUserMessageId.value = latestUserMessageId.value;
+        } else {
+            streamStatus.value = 'Complete';
+            lastFailedUserMessageId.value = '';
+        }
+
         return;
     }
 
@@ -402,6 +454,8 @@ watch(() => props.agentId, () => {
     messages.value = [];
     activeRunId.value = '';
     lastFailedUserMessageId.value = '';
+    editingRetryMessageId.value = '';
+    retryDraft.value = '';
     chatContextId.value = props.contextId || crypto.randomUUID();
     streamStatus.value = 'Idle';
     fetchAgent();
@@ -416,6 +470,8 @@ watch(() => props.contextId, (contextId) => {
     messages.value = [];
     activeRunId.value = '';
     lastFailedUserMessageId.value = '';
+    editingRetryMessageId.value = '';
+    retryDraft.value = '';
     chatContextId.value = contextId;
     streamStatus.value = 'Idle';
     fetchChatHistory();
@@ -528,44 +584,89 @@ onBeforeUnmount(closeStream);
                                 </div>
 
                                 <div
-                                    class="max-w-[min(760px,85%)] rounded-app-container border px-4 py-3 shadow-sm"
-                                    :class="message.role === 'user'
-                                        ? 'bg-primary text-primary-foreground'
-                                        : message.failed
-                                            ? 'border-destructive/30 bg-destructive/5'
-                                            : 'bg-card'"
+                                    class="flex max-w-[min(760px,85%)] flex-col gap-2"
+                                    :class="message.role === 'user' ? 'items-end' : 'items-start'"
                                 >
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <p class="text-xs font-medium uppercase tracking-wide opacity-75">
-                                            {{ message.role === 'user' ? 'You' : 'Agent' }}
-                                        </p>
-                                        <Badge
-                                            v-if="message.status"
-                                            variant="outline"
-                                            class="rounded-full text-[11px]"
-                                        >
-                                            <LoaderCircleIcon
-                                                v-if="message.pending"
-                                                class="mr-1 size-3 animate-spin"
-                                            />
-                                            {{ message.status }}
-                                        </Badge>
+                                    <div
+                                        class="w-full rounded-app-container border px-4 py-3 shadow-sm"
+                                        :class="message.role === 'user'
+                                            ? 'bg-primary text-primary-foreground'
+                                            : message.failed
+                                                ? 'border-destructive/30 bg-destructive/5'
+                                                : 'bg-card'"
+                                    >
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <p class="text-xs font-medium uppercase tracking-wide opacity-75">
+                                                {{ message.role === 'user' ? 'You' : 'Agent' }}
+                                            </p>
+                                            <Badge
+                                                v-if="message.status"
+                                                variant="outline"
+                                                class="rounded-full text-[11px]"
+                                            >
+                                                <LoaderCircleIcon
+                                                    v-if="message.pending"
+                                                    class="mr-1 size-3 animate-spin"
+                                                />
+                                                {{ message.status }}
+                                            </Badge>
+                                        </div>
+                                        <p class="mt-2 whitespace-pre-wrap text-sm leading-6">{{ message.content }}</p>
+                                        <p class="mt-2 text-xs opacity-60">{{ formatDate(message.createdAt) }}</p>
                                     </div>
-                                    <p class="mt-2 whitespace-pre-wrap text-sm leading-6">{{ message.content }}</p>
-                                    <p class="mt-2 text-xs opacity-60">{{ formatDate(message.createdAt) }}</p>
-                                </div>
 
-                                <Button
-                                    v-if="canRetryMessage(message)"
-                                    type="button"
-                                    variant="outline"
-                                    size="xs"
-                                    class="self-end"
-                                    @click="retryMessage(message)"
-                                >
-                                    <RefreshCcwIcon class="size-3" />
-                                    Retry
-                                </Button>
+                                    <div
+                                        v-if="canRetryMessage(message) && editingRetryMessageId !== message.id"
+                                        class="flex items-center gap-2"
+                                    >
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="xs"
+                                            @click="retryMessage(message)"
+                                        >
+                                            <RefreshCcwIcon class="size-3" />
+                                            Retry
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="xs"
+                                            @click="startEditingRetryMessage(message)"
+                                        >
+                                            Edit
+                                        </Button>
+                                    </div>
+
+                                    <div
+                                        v-else-if="canRetryMessage(message)"
+                                        class="w-full rounded-app-container border bg-card p-3 text-foreground shadow-sm"
+                                    >
+                                        <Textarea
+                                            v-model="retryDraft"
+                                            class="min-h-20 resize-none rounded-app-control"
+                                            :disabled="sending"
+                                        />
+                                        <div class="mt-2 flex justify-end gap-2">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="xs"
+                                                @click="cancelEditingRetryMessage"
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                size="xs"
+                                                :disabled="!retryDraft.trim() || sending"
+                                                @click="retryEditedMessage(message)"
+                                            >
+                                                Retry edited
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <div
                                     v-if="message.role === 'user'"

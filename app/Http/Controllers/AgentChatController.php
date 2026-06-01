@@ -11,6 +11,7 @@ use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -123,10 +124,20 @@ class AgentChatController extends Controller
         $validated = $request->validate([
             'message' => ['required', 'string', 'max:20000'],
             'context_id' => ['sometimes', 'string', 'max:255'],
+            'replace_failed_last_message' => ['sometimes', 'boolean'],
         ]);
 
         $runId = (string) Str::uuid();
         $contextId = $validated['context_id'] ?? (string) Str::uuid();
+
+        if (($validated['replace_failed_last_message'] ?? false)
+            && ! $this->replaceFailedLastUserMessage($agent, $contextId, $validated['message'])
+        ) {
+            return response()->json([
+                'message' => 'The last message can only be replaced after a failed agent run.',
+            ], 409);
+        }
+
         $task = $messages->handle(
             $agent->slug,
             $payloads->userMessage($validated['message']),
@@ -152,6 +163,45 @@ class AgentChatController extends Controller
             ], false),
             'snapshot' => $this->snapshot($run),
         ], 202);
+    }
+
+    private function replaceFailedLastUserMessage(Agent $agent, string $contextId, string $message): bool
+    {
+        $latestRun = $this->latestRunForContext($agent, $contextId);
+
+        if (! $latestRun instanceof AgentRun || $latestRun->state !== 'failed') {
+            return false;
+        }
+
+        $latestMessage = AgentChatMessage::query()
+            ->where('thread_id', "{$agent->slug}:{$contextId}")
+            ->latest('id')
+            ->first();
+
+        if (! $latestMessage instanceof AgentChatMessage || $latestMessage->role !== 'user') {
+            return false;
+        }
+
+        DB::transaction(function () use ($agent, $contextId, $latestMessage, $message): void {
+            $latestMessage->delete();
+
+            AgentChatMessage::query()->create([
+                'thread_id' => "{$agent->slug}:{$contextId}",
+                'role' => 'user',
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'content' => $message,
+                        'meta' => [],
+                    ],
+                ],
+                'meta' => [
+                    '__id' => 'msg_'.Str::uuid()->toString(),
+                ],
+            ]);
+        });
+
+        return true;
     }
 
     public function show(Agent $agent, string $contextId): JsonResponse
