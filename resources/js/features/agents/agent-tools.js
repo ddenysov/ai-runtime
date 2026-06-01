@@ -55,3 +55,79 @@ export function commaList(value) {
         .map((item) => item.trim())
         .filter(Boolean);
 }
+
+export function buildMcpToolSlug(serverUuid, toolName) {
+    return `mcp:${serverUuid}:${toolName}`;
+}
+
+export function buildMcpToolConfig(server, tool) {
+    return {
+        server_uuid: server.uuid,
+        server_name: server.name,
+        tool_name: tool.name,
+        title: tool.title,
+        description: tool.description,
+        input_schema: tool.input_schema ?? {},
+    };
+}
+
+export function mcpToolLabelFromConfig(config) {
+    if (!config || typeof config !== 'object') {
+        return null;
+    }
+
+    const serverName = config.server_name ?? config.server_uuid ?? 'MCP server';
+    const toolName = config.title || config.tool_name;
+
+    return toolName ? `${serverName}: ${toolName}` : null;
+}
+
+export function buildAgentToolsDraft(agentTools = []) {
+    const bySlug = new Map(
+        (agentTools ?? []).map((tool) => [tool.slug, {
+            slug: tool.slug,
+            is_enabled: Boolean(tool.is_enabled),
+            config: tool.config ?? null,
+        }]),
+    );
+
+    return runtimeTools.map((definition) => {
+        const existing = bySlug.get(definition.slug);
+
+        return {
+            slug: definition.slug,
+            is_enabled: existing?.is_enabled ?? false,
+            config: existing?.config ?? null,
+        };
+    }).concat(
+        [...bySlug.values()].filter((tool) => !runtimeTools.some((definition) => definition.slug === tool.slug)),
+    );
+}
+
+export function toolDisplayMeta(tool, definitions = []) {
+    const runtime = findRuntimeTool(tool.slug);
+    if (runtime) {
+        return {
+            label: runtime.label,
+            description: runtime.description,
+            group: 'Built-in',
+        };
+    }
+
+    const discovered = definitions.find((item) => item.slug === tool.slug);
+    if (discovered) {
+        return {
+            label: discovered.label,
+            description: discovered.description,
+            group: discovered.group ?? 'MCP',
+        };
+    }
+
+    const mcpLabel = mcpToolLabelFromConfig(tool.config);
+
+    return {
+        label: mcpLabel ?? tool.slug.replace(/^mcp:[^:]+:/, ''),
+        description: tool.config?.description ?? 'MCP tool configured for this agent.',
+        group: tool.config?.server_name ?? 'MCP',
+    };
+}

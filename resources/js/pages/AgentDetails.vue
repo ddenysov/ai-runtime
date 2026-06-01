@@ -44,7 +44,13 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { getAgent, listAiProviders, updateAgent } from '@/lib/api';
-import { findRuntimeTool, linesToList, listToLines } from '@/features/agents/agent-tools';
+import AgentToolsEditor from '@/features/agents/AgentToolsEditor.vue';
+import {
+    findRuntimeTool,
+    linesToList,
+    listToLines,
+    mcpToolLabelFromConfig,
+} from '@/features/agents/agent-tools';
 import {
     navigation,
     workspaces,
@@ -72,6 +78,8 @@ const editingInstructionKey = ref(null);
 const instructionDraft = ref('');
 const savingInstruction = ref(false);
 const instructionError = ref('');
+const editingTools = ref(false);
+const emptyAgentTools = [];
 let requestSequence = 0;
 
 const agentNavigation = computed(() => navigation.map((item) => ({
@@ -95,11 +103,14 @@ const a2aCardUrl = computed(() => (agent.value?.slug
 
 const tools = computed(() => (agent.value?.tools ?? []).map((tool) => {
     const definition = findRuntimeTool(tool.slug);
+    const mcpLabel = mcpToolLabelFromConfig(tool.config);
 
     return {
         ...tool,
-        label: definition?.label ?? titleize(tool.slug),
-        description: definition?.description ?? 'Runtime tool configured for this agent.',
+        label: definition?.label ?? mcpLabel ?? titleize(tool.slug),
+        description: definition?.description
+            ?? tool.config?.description
+            ?? 'Runtime tool configured for this agent.',
         status: tool.is_enabled ? 'Enabled' : 'Disabled',
     };
 }));
@@ -500,6 +511,7 @@ function titleize(value) {
 
 watch(() => props.agentId, () => {
     editingProviderModel.value = false;
+    editingTools.value = false;
     cancelInstructionEdit();
     fetchAgent();
 });
@@ -745,8 +757,14 @@ onMounted(fetchAgent);
                                     Tool access is explicit so reviewers can see what the agent may call.
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent>
-                                <div v-if="tools.length" class="grid gap-3 md:grid-cols-2">
+                            <CardContent class="space-y-5">
+                                <AgentToolsEditor
+                                    v-model:editing="editingTools"
+                                    :agent-id="agentId"
+                                    :tools="agent.tools ?? emptyAgentTools"
+                                    @saved="agent = $event"
+                                />
+                                <div v-if="!editingTools && tools.length" class="grid gap-3 md:grid-cols-2">
                                     <div
                                         v-for="tool in tools"
                                         :key="tool.id ?? tool.slug"
@@ -773,10 +791,13 @@ onMounted(fetchAgent);
                                         >{{ formatJson(tool.config) }}</pre>
                                     </div>
                                 </div>
-                                <div v-else class="rounded-app-container border border-dashed px-4 py-8 text-center">
+                                <div
+                                    v-else-if="!editingTools"
+                                    class="rounded-app-container border border-dashed px-4 py-8 text-center"
+                                >
                                     <p class="font-medium">No runtime tools configured</p>
                                     <p class="app-muted-text mt-1 text-sm">
-                                        This agent can answer directly, but cannot delegate or inspect subagents.
+                                        Use Manage tools to attach built-in runtime tools or MCP server tools.
                                     </p>
                                 </div>
                             </CardContent>

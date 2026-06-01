@@ -485,7 +485,7 @@ async function submit() {
                                                 {{ availableTools.find((item) => item.slug === tool.slug)?.description }}
                                             </p>
                                         </div>
-                                        <Switch v-model:checked="tool.is_enabled" />
+                                        <Switch v-model="tool.is_enabled" />
                                     </div>
                                 </div>
                             </div>
@@ -577,7 +577,7 @@ async function submit() {
                             <FieldLabel for="agent-active">Active</FieldLabel>
                             <Switch
                                 id="agent-active"
-                                v-model:checked="form.is_active"
+                                v-model="form.is_active"
                             />
                         </Field>
                     </FieldGroup>

@@ -132,7 +132,7 @@ class AgentController extends Controller
         foreach ($tools as $tool) {
             $agent->tools()->create([
                 'slug' => $tool['slug'],
-                'is_enabled' => $tool['is_enabled'] ?? true,
+                'is_enabled' => filter_var($tool['is_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
                 'config' => $tool['config'] ?? null,
             ]);
         }
