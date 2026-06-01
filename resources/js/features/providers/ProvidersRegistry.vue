@@ -38,6 +38,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import EditProviderDialog from '@/features/providers/EditProviderDialog.vue';
 import { deleteAiProvider, listAiProviders } from '@/lib/api';
 import { findProviderType, providerTypes } from '@/features/providers/provider-types';
 
@@ -55,6 +56,8 @@ const providers = ref([]);
 const pagination = ref({});
 const deleteDialogOpen = ref(false);
 const providerToDelete = ref(null);
+const editDialogOpen = ref(false);
+const providerToEditId = ref(null);
 let searchTimer;
 let requestSequence = 0;
 
@@ -180,7 +183,8 @@ function openResource(item) {
 }
 
 function editResource(item) {
-    console.info('Edit resource', item.name);
+    providerToEditId.value = item.id;
+    editDialogOpen.value = true;
 }
 
 function deleteResource(item) {
@@ -386,6 +390,12 @@ defineExpose({
             </div>
         </div>
     </DataPanel>
+
+    <EditProviderDialog
+        v-model:open="editDialogOpen"
+        :provider-id="providerToEditId"
+        @updated="fetchProviders"
+    />
 
     <AlertDialog v-model:open="deleteDialogOpen">
         <AlertDialogContent>

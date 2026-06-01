@@ -68,9 +68,20 @@ export function listAiProviders({
     return apiFetch(`/api/ai-providers${query ? `?${query}` : ''}`);
 }
 
+export function getAiProvider(id) {
+    return apiFetch(`/api/ai-providers/${id}`);
+}
+
 export function createAiProvider(payload) {
     return apiFetch('/api/ai-providers', {
         method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function updateAiProvider(id, payload) {
+    return apiFetch(`/api/ai-providers/${id}`, {
+        method: 'PUT',
         body: JSON.stringify(payload),
     });
 }

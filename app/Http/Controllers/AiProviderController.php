@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreAiProviderRequest;
 use App\Http\Requests\TestAiProviderConnectionRequest;
+use App\Http\Requests\UpdateAiProviderRequest;
+use App\Models\Agent;
 use App\Models\AiProvider;
+use App\Models\AiProviderModel;
 use App\Neuron\Providers\AiProviderConnectionTester;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -79,6 +82,40 @@ class AiProviderController extends Controller
         return response()->json($provider->load('models'), 201);
     }
 
+    public function show(AiProvider $aiProvider): JsonResponse
+    {
+        return response()->json($aiProvider->load('models'));
+    }
+
+    public function update(UpdateAiProviderRequest $request, AiProvider $aiProvider): JsonResponse
+    {
+        $validated = $request->validated();
+        $providerAttributes = Arr::except($validated, 'models');
+        $models = $validated['models'];
+
+        if (isset($providerAttributes['credentials'])) {
+            $providerAttributes['credentials'] = $this->mergeCredentials(
+                $aiProvider->credentials ?? [],
+                $providerAttributes['credentials'],
+            );
+
+            if ($providerAttributes['credentials'] === $aiProvider->credentials) {
+                unset($providerAttributes['credentials']);
+            }
+        }
+
+        $provider = DB::transaction(function () use ($aiProvider, $providerAttributes, $models): AiProvider {
+            $aiProvider->fill($providerAttributes);
+            $aiProvider->save();
+
+            $this->syncProviderModels($aiProvider, $models);
+
+            return $aiProvider;
+        });
+
+        return response()->json($provider->load('models'));
+    }
+
     public function destroy(AiProvider $aiProvider)
     {
         $aiProvider->delete();
@@ -91,10 +128,19 @@ class AiProviderController extends Controller
         AiProviderConnectionTester $connectionTester,
     ): JsonResponse {
         $validated = $request->validated();
+        $credentials = $validated['credentials'] ?? [];
+
+        if (isset($validated['ai_provider_id'])) {
+            $storedProvider = AiProvider::query()->findOrFail($validated['ai_provider_id']);
+            $credentials = $this->mergeCredentials($storedProvider->credentials ?? [], $credentials);
+        }
 
         try {
             $connectionTester->assertProviderValid(
-                new AiProvider(Arr::only($validated, ['type', 'credentials'])),
+                new AiProvider([
+                    'type' => $validated['type'],
+                    'credentials' => $credentials,
+                ]),
                 $validated['model'],
             );
         } catch (Throwable $exception) {
@@ -106,6 +152,78 @@ class AiProviderController extends Controller
         return response()->json([
             'message' => 'Provider connection is valid.',
         ]);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $models
+     */
+    private function syncProviderModels(AiProvider $provider, array $models): void
+    {
+        $submittedIds = collect($models)
+            ->pluck('id')
+            ->filter()
+            ->map(fn (mixed $id): int => (int) $id)
+            ->values();
+
+        $modelsToDelete = $provider->models()
+            ->whereNotIn('id', $submittedIds)
+            ->get();
+
+        foreach ($modelsToDelete as $model) {
+            if (Agent::query()->where('ai_provider_model_id', $model->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'models' => "Model [{$model->name}] cannot be removed because agents still use it.",
+                ]);
+            }
+
+            $model->delete();
+        }
+
+        foreach ($models as $modelData) {
+            $attributes = [
+                'name' => ($modelData['name'] ?? null) ?: $modelData['model'],
+                'model' => $modelData['model'],
+                'description' => $modelData['description'] ?? null,
+                'is_active' => $modelData['is_active'] ?? true,
+            ];
+
+            if (isset($modelData['id'])) {
+                /** @var AiProviderModel $existingModel */
+                $existingModel = $provider->models()->findOrFail($modelData['id']);
+
+                if ($existingModel->model !== $modelData['model']) {
+                    $attributes['model'] = $modelData['model'];
+                    $attributes['slug'] = $this->makeModelSlug($provider->slug, $modelData['model']);
+                }
+
+                $existingModel->update($attributes);
+
+                continue;
+            }
+
+            $provider->models()->create([
+                ...$attributes,
+                'slug' => $this->makeModelSlug($provider->slug, $modelData['model']),
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $existing
+     * @param  array<string, mixed>  $incoming
+     * @return array<string, mixed>
+     */
+    private function mergeCredentials(array $existing, array $incoming): array
+    {
+        foreach ($incoming as $key => $value) {
+            if (! is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            $existing[$key] = $value;
+        }
+
+        return $existing;
     }
 
     private function makeModelSlug(string $providerSlug, string $model): string

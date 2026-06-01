@@ -21,7 +21,12 @@ class TestAiProviderConnectionRequest extends FormRequest
         return [
             'type' => ['required', Rule::enum(AiProviderType::class)],
             'credentials' => ['required', 'array'],
-            'credentials.key' => ['required', 'string'],
+            'credentials.key' => [
+                Rule::requiredIf(fn (): bool => ! $this->filled('ai_provider_id')),
+                'nullable',
+                'string',
+            ],
+            'ai_provider_id' => ['sometimes', 'integer', 'exists:ai_providers,id'],
             'model' => ['required', 'string', 'max:255'],
         ];
     }

@@ -5,7 +5,6 @@ use App\A2A\Http\A2ANotificationController;
 use App\A2A\Http\AgentCardController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
-use App\Http\Controllers\AgentRunController;
 use App\Http\Controllers\AiProviderController;
 use Illuminate\Support\Facades\Route;
 
@@ -21,6 +20,8 @@ Route::delete('/agents/{agent}', [AgentController::class, 'destroy']);
 Route::get('/ai-providers', [AiProviderController::class, 'index']);
 Route::post('/ai-providers/test-connection', [AiProviderController::class, 'testConnection']);
 Route::post('/ai-providers', [AiProviderController::class, 'store']);
+Route::get('/ai-providers/{aiProvider}', [AiProviderController::class, 'show']);
+Route::put('/ai-providers/{aiProvider}', [AiProviderController::class, 'update']);
 Route::delete('/ai-providers/{aiProvider}', [AiProviderController::class, 'destroy']);
 
 Route::get('/a2a/{agent}/.well-known/agent-card.json', AgentCardController::class);

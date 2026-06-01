@@ -262,6 +262,130 @@ class AiProviderTest extends TestCase
         $this->assertTrue($sandbox->is(AiProvider::query()->where('slug', 'sandbox-gemini')->first()));
     }
 
+    public function test_can_show_ai_provider_via_api(): void
+    {
+        $provider = AiProvider::query()->create([
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+        ]);
+
+        $provider->models()->create([
+            'slug' => 'work-gemini-gemini-3-1-flash',
+            'name' => 'Gemini Flash 3.1',
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response = $this->getJson("/api/ai-providers/{$provider->id}");
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('slug', 'work-gemini')
+            ->assertJsonPath('models.0.model', 'gemini-3.1-flash')
+            ->assertJsonMissing(['credentials']);
+    }
+
+    public function test_can_update_ai_provider_via_api(): void
+    {
+        $provider = AiProvider::query()->create([
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+        ]);
+
+        $existingModel = $provider->models()->create([
+            'slug' => 'work-gemini-gemini-3-1-flash',
+            'name' => 'Gemini Flash 3.1',
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response = $this->putJson("/api/ai-providers/{$provider->id}", [
+            'name' => 'Work Gemini Updated',
+            'description' => 'Updated description',
+            'type' => 'gemini',
+            'is_active' => false,
+            'models' => [
+                [
+                    'id' => $existingModel->id,
+                    'model' => 'gemini-3.1-flash',
+                    'name' => 'Gemini Flash 3.1 Updated',
+                ],
+                [
+                    'model' => 'gemini-3.1-pro',
+                    'name' => 'Gemini Pro 3.1',
+                ],
+            ],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('name', 'Work Gemini Updated')
+            ->assertJsonPath('description', 'Updated description')
+            ->assertJsonPath('is_active', false)
+            ->assertJsonCount(2, 'models');
+
+        $this->assertDatabaseHas('ai_providers', [
+            'id' => $provider->id,
+            'name' => 'Work Gemini Updated',
+            'is_active' => false,
+        ]);
+        $this->assertDatabaseHas('ai_provider_models', [
+            'id' => $existingModel->id,
+            'name' => 'Gemini Flash 3.1 Updated',
+            'model' => 'gemini-3.1-flash',
+        ]);
+        $this->assertDatabaseHas('ai_provider_models', [
+            'ai_provider_id' => $provider->id,
+            'slug' => 'work-gemini-gemini-3-1-pro',
+            'name' => 'Gemini Pro 3.1',
+            'model' => 'gemini-3.1-pro',
+        ]);
+        $this->assertSame('gemini-secret-key', $provider->fresh()->credential('key'));
+    }
+
+    public function test_can_update_ai_provider_credentials_via_api(): void
+    {
+        $provider = AiProvider::query()->create([
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+        ]);
+
+        $model = $provider->models()->create([
+            'slug' => 'work-gemini-gemini-3-1-flash',
+            'name' => 'Gemini Flash 3.1',
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response = $this->putJson("/api/ai-providers/{$provider->id}", [
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-new-secret-key',
+            ],
+            'models' => [
+                [
+                    'id' => $model->id,
+                    'model' => 'gemini-3.1-flash',
+                    'name' => 'Gemini Flash 3.1',
+                ],
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertSame('gemini-new-secret-key', $provider->fresh()->credential('key'));
+    }
+
     public function test_can_delete_ai_provider_via_api(): void
     {
         $provider = AiProvider::query()->create([
