@@ -23,7 +23,7 @@ export const navigation = [
     { label: 'Knowledge Bases', icon: DatabaseIcon, active: false },
     { label: 'Tenants & Users', icon: UsersIcon, active: false },
     { label: 'Security', icon: ShieldCheckIcon, active: false },
-    { label: 'Settings', icon: SettingsIcon, active: false },
+    { label: 'Settings', icon: SettingsIcon, active: false, route: '/settings' },
 ];
 
 export const metrics = [

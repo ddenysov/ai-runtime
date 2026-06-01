@@ -6,8 +6,12 @@ use App\A2A\Http\AgentCardController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AiProviderController;
+use App\Http\Controllers\SettingsController;
 use App\Mcp\Http\Controllers\McpServerController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/settings', [SettingsController::class, 'show']);
+Route::patch('/settings', [SettingsController::class, 'update']);
 
 Route::get('/agents', [AgentController::class, 'index']);
 Route::post('/agents', [AgentController::class, 'store']);

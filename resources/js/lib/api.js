@@ -148,6 +148,17 @@ export function listMcpServerTools(uuid) {
     return apiFetch(`/api/mcp-servers/${uuid}/tools`);
 }
 
+export function getSettings() {
+    return apiFetch('/api/settings');
+}
+
+export function updateSettings(payload) {
+    return apiFetch('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+    });
+}
+
 export function listAgents({
     search,
     isActive,

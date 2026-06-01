@@ -5,6 +5,7 @@ import AgentDetails from '@/pages/AgentDetails.vue';
 import Agents from '@/pages/Agents.vue';
 import Index from '@/pages/Index.vue';
 import McpServers from '@/pages/McpServers.vue';
+import Settings from '@/pages/Settings.vue';
 
 const routes = [
     {
@@ -39,6 +40,11 @@ const routes = [
         path: '/mcp-servers',
         name: 'mcp-servers',
         component: McpServers,
+    },
+    {
+        path: '/settings',
+        name: 'settings',
+        component: Settings,
     },
 ];
 
