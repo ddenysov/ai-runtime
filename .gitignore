@@ -3,6 +3,7 @@
 .env
 .env.backup
 .env.production
+external/mcp copy/mcp-google-workspace/g.json
 .phpactor.json
 .phpunit.result.cache
 /.codex
