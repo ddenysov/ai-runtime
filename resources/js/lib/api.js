@@ -220,6 +220,13 @@ export function updateAgent(id, payload) {
     });
 }
 
+export function generateAgentInstructions(id, payload = {}) {
+    return apiFetch(`/api/agents/${id}/generate-instructions`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
 export function listAgentChats({
     id,
     search,

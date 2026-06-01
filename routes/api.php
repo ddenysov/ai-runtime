@@ -5,6 +5,7 @@ use App\A2A\Http\A2ANotificationController;
 use App\A2A\Http\AgentCardController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
+use App\Http\Controllers\AgentInstructionsGeneratorController;
 use App\Http\Controllers\AiProviderController;
 use App\Http\Controllers\SettingsController;
 use App\Mcp\Http\Controllers\McpServerController;
@@ -20,6 +21,7 @@ Route::post('/agents/{agent}/chat', [AgentChatController::class, 'store']);
 Route::get('/agents/{agent}/chat/{contextId}', [AgentChatController::class, 'show']);
 Route::get('/agents/{agent}/chat/{run}/events', [AgentChatController::class, 'events'])->name('agents.chat.events');
 Route::get('/agents/{agent}', [AgentController::class, 'show']);
+Route::post('/agents/{agent}/generate-instructions', [AgentInstructionsGeneratorController::class, 'store']);
 Route::put('/agents/{agent}', [AgentController::class, 'update']);
 Route::delete('/agents/{agent}', [AgentController::class, 'destroy']);
 

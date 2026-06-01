@@ -16,6 +16,7 @@ import {
     PencilIcon,
     RefreshCcwIcon,
     Settings2Icon,
+    SparklesIcon,
     WrenchIcon,
     XCircleIcon,
     XIcon,
@@ -45,6 +46,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { getAgent, listAiProviders, updateAgent } from '@/lib/api';
 import AgentToolsEditor from '@/features/agents/AgentToolsEditor.vue';
+import GenerateAgentPromptDialog from '@/features/agents/GenerateAgentPromptDialog.vue';
 import {
     findRuntimeTool,
     linesToList,
@@ -79,6 +81,7 @@ const instructionDraft = ref('');
 const savingInstruction = ref(false);
 const instructionError = ref('');
 const editingTools = ref(false);
+const promptGeneratorOpen = ref(false);
 const emptyAgentTools = [];
 let requestSequence = 0;
 
@@ -395,6 +398,15 @@ async function fetchAgent() {
     }
 }
 
+function openPromptGenerator() {
+    promptGeneratorOpen.value = true;
+}
+
+function handlePromptGeneratorSaved(updated) {
+    agent.value = updated;
+    cancelInstructionEdit();
+}
+
 function goBack() {
     router.push({ name: 'agents' });
 }
@@ -649,13 +661,27 @@ onMounted(fetchAgent);
                     <div class="space-y-6">
                         <Card class="app-surface">
                             <CardHeader>
-                                <div class="flex items-center gap-2">
-                                    <Settings2Icon class="app-muted-text size-4" />
-                                    <CardTitle>Operating instructions</CardTitle>
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <Settings2Icon class="app-muted-text size-4" />
+                                            <CardTitle>Operating instructions</CardTitle>
+                                        </div>
+                                        <CardDescription class="mt-1.5">
+                                            The behavior contract the runtime will package into agent runs.
+                                        </CardDescription>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="app-soft-control shrink-0"
+                                        :disabled="editingInstructionKey !== null"
+                                        @click="openPromptGenerator"
+                                    >
+                                        <SparklesIcon class="size-4" />
+                                        Generate with AI
+                                    </Button>
                                 </div>
-                                <CardDescription>
-                                    The behavior contract the runtime will package into agent runs.
-                                </CardDescription>
                             </CardHeader>
                             <CardContent class="space-y-5">
                                 <div
@@ -1089,5 +1115,12 @@ onMounted(fetchAgent);
                 </div>
             </div>
         </div>
+
+        <GenerateAgentPromptDialog
+            v-if="agent"
+            v-model:open="promptGeneratorOpen"
+            :agent="agent"
+            @saved="handlePromptGeneratorSaved"
+        />
     </AppShell>
 </template>
