@@ -11,6 +11,7 @@ use App\Neuron\Providers\RuntimeAiProviderFactory;
 use App\Neuron\Tools\GetAgentCardTool;
 use App\Neuron\Tools\McpServerTool;
 use App\Neuron\Tools\RemoteA2AAgentTool;
+use App\Neuron\Tools\RollDiceTool;
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
 use NeuronAI\Agent\Agent;
@@ -62,6 +63,7 @@ class RuntimeAgentFactory
         return match (true) {
             $slug === 'remote_a2a_agent' => new RemoteA2AAgentTool($context, $allowedSubagents),
             $slug === 'get_agent_card' => new GetAgentCardTool($allowedSubagents),
+            $slug === 'roll_dice' => new RollDiceTool,
             str_starts_with($slug, 'mcp:') => $this->makeMcpTool($slug, $config),
             default => throw new InvalidArgumentException("Unsupported runtime tool [{$slug}]."),
         };

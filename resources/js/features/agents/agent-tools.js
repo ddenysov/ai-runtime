@@ -9,6 +9,11 @@ export const runtimeTools = [
         label: 'Get agent card',
         description: 'Inspect a configured subagent card before delegating.',
     },
+    {
+        slug: 'roll_dice',
+        label: 'Roll dice',
+        description: 'Roll D&D dice with notation such as 1d20+7, 8d6, or 4d6dl1.',
+    },
 ];
 
 export function findRuntimeTool(slug) {
