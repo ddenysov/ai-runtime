@@ -19,7 +19,7 @@ class RemoteA2AToolResult extends InterruptRequest
         return json_encode([
             'result' => $this->result,
             'error' => $this->error,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     public function jsonSerialize(): array

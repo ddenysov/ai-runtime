@@ -76,7 +76,7 @@ class RollDiceTool extends Tool
             return json_encode([
                 'error' => 'Invalid roll: roll_kind must be attack, check, or save.',
                 'reason' => trim($reason) !== '' ? trim($reason) : 'Unknown roll',
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
 
         try {
@@ -89,12 +89,12 @@ class RollDiceTool extends Tool
                 rollKind: $rollKind,
             );
 
-            return json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            return json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         } catch (InvalidDiceRollException $exception) {
             return json_encode([
                 'error' => $exception->getMessage(),
                 'reason' => trim($reason) !== '' ? trim($reason) : $exception->reason,
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
     }
 }
