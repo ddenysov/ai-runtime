@@ -60,6 +60,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { getAgent, listAgents, listAiProviders, updateAgent } from '@/lib/api';
+import AgentChannelsEditor from '@/features/agents/AgentChannelsEditor.vue';
 import AgentToolsEditor from '@/features/agents/AgentToolsEditor.vue';
 import GenerateAgentPromptDialog from '@/features/agents/GenerateAgentPromptDialog.vue';
 import {
@@ -972,6 +973,8 @@ onMounted(fetchAgent);
                                 </div>
                             </CardContent>
                         </Card>
+
+                        <AgentChannelsEditor :agent-id="agentId" />
 
                         <Card class="app-surface">
                             <CardHeader>

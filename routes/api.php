@@ -3,6 +3,8 @@
 use App\A2A\Http\A2AJsonRpcController;
 use App\A2A\Http\A2ANotificationController;
 use App\A2A\Http\AgentCardController;
+use App\Channels\Http\Controllers\AgentChannelController;
+use App\Channels\Http\Controllers\TelegramAgentWebhookController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AgentInstructionsGeneratorController;
@@ -13,6 +15,16 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/settings', [SettingsController::class, 'show']);
 Route::patch('/settings', [SettingsController::class, 'update']);
+
+Route::get('/agent-channels', [AgentChannelController::class, 'index']);
+Route::post('/agent-channels', [AgentChannelController::class, 'store']);
+Route::get('/agent-channels/{agentChannel}', [AgentChannelController::class, 'show']);
+Route::patch('/agent-channels/{agentChannel}', [AgentChannelController::class, 'update']);
+Route::delete('/agent-channels/{agentChannel}', [AgentChannelController::class, 'destroy']);
+Route::post('/agent-channels/{agentChannel}/telegram/webhook', [AgentChannelController::class, 'setTelegramWebhook']);
+Route::delete('/agent-channels/{agentChannel}/telegram/webhook', [AgentChannelController::class, 'deleteTelegramWebhook']);
+
+Route::post('/integrations/telegram/webhooks/{agentChannel}', TelegramAgentWebhookController::class);
 
 Route::get('/agents', [AgentController::class, 'index']);
 Route::post('/agents', [AgentController::class, 'store']);

@@ -56,6 +56,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Public application URL
+    |--------------------------------------------------------------------------
+    |
+    | Base URL exposed to external systems (Telegram webhooks, tunnels, etc.).
+    | When PUBLIC_APP_URL is set, it is used instead of APP_URL.
+    |
+    */
+
+    'public_url' => rtrim(
+        (static function (): string {
+            $public = trim((string) env('PUBLIC_APP_URL', ''));
+
+            return $public !== '' ? $public : (string) env('APP_URL', 'http://localhost');
+        })(),
+        '/',
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

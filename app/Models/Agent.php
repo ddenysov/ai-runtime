@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Channels\Models\AgentChannel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -55,6 +56,11 @@ class Agent extends Model
     public function tools(): HasMany
     {
         return $this->hasMany(AgentTool::class);
+    }
+
+    public function channels(): HasMany
+    {
+        return $this->hasMany(AgentChannel::class);
     }
 
     public function versions(): HasMany

@@ -302,3 +302,50 @@ export function deleteAgent(id) {
         method: 'DELETE',
     });
 }
+
+export function listAgentChannels({ agentId } = {}) {
+    const params = new URLSearchParams();
+
+    appendQueryParam(params, 'agent_id', agentId);
+
+    const query = params.toString();
+
+    return apiFetch(`/api/agent-channels${query ? `?${query}` : ''}`);
+}
+
+export function getAgentChannel(uuid) {
+    return apiFetch(`/api/agent-channels/${encodeURIComponent(uuid)}`);
+}
+
+export function createAgentChannel(payload) {
+    return apiFetch('/api/agent-channels', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function updateAgentChannel(uuid, payload) {
+    return apiFetch(`/api/agent-channels/${encodeURIComponent(uuid)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function deleteAgentChannel(uuid, expectedVersion) {
+    return apiFetch(`/api/agent-channels/${encodeURIComponent(uuid)}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ expected_version: expectedVersion }),
+    });
+}
+
+export function setAgentChannelTelegramWebhook(uuid) {
+    return apiFetch(`/api/agent-channels/${encodeURIComponent(uuid)}/telegram/webhook`, {
+        method: 'POST',
+    });
+}
+
+export function deleteAgentChannelTelegramWebhook(uuid) {
+    return apiFetch(`/api/agent-channels/${encodeURIComponent(uuid)}/telegram/webhook`, {
+        method: 'DELETE',
+    });
+}

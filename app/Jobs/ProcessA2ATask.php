@@ -11,6 +11,7 @@ use App\A2A\Recovery\A2ARetryPolicy;
 use App\A2A\RuntimeAgentPushNotifier;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\TaskPayloadFactory;
+use App\Channels\Services\TelegramOutboundMessenger;
 use App\Models\A2AChildTask;
 use App\Models\A2ATask;
 use App\Models\Agent;
@@ -48,6 +49,7 @@ class ProcessA2ATask implements ShouldQueue
         TaskPayloadFactory $payloads,
         A2AErrorClassifier $errors,
         A2ARetryPolicy $retryPolicy,
+        TelegramOutboundMessenger $telegram,
     ): void {
         $task = $tasks->find($this->taskId);
 
@@ -106,6 +108,7 @@ class ProcessA2ATask implements ShouldQueue
                 ]);
             $notifier->sendArtifactUpdate($completed, $artifact);
             $notifier->sendStatusUpdate($completed);
+            $telegram->deliverForTask($completed, $response);
             $run->update([
                 'state' => 'completed',
                 'last_error_kind' => null,
@@ -145,6 +148,7 @@ class ProcessA2ATask implements ShouldQueue
 
             $failed = $tasks->updateState($latestTask, $finalState, $failedMessage);
             $notifier->sendStatusUpdate($failed);
+            $telegram->deliverForTask($failed, $this->finalMessage($failure, 'processing'));
             A2ATask::query()
                 ->whereKey($this->taskId)
                 ->update([

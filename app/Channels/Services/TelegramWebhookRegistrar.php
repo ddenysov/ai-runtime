@@ -1,0 +1,100 @@
+<?php
+
+namespace App\Channels\Services;
+
+use App\Channels\Models\AgentChannel;
+use JsonException;
+use Telegram\Bot\Api;
+use Throwable;
+
+final class TelegramWebhookRegistrar
+{
+    /**
+     * @return array{ok: true, webhook_url: string}|array{ok: false, error: string}
+     */
+    public function set(AgentChannel $channel): array
+    {
+        $base = $this->resolveHttpsBaseUrl();
+
+        if ($base === null) {
+            return ['ok' => false, 'error' => 'PUBLIC_APP_URL or APP_URL must be a valid HTTPS URL.'];
+        }
+
+        $botToken = $this->botToken($channel);
+
+        if ($botToken === '') {
+            return ['ok' => false, 'error' => 'Channel has no bot_token in settings.'];
+        }
+
+        if ($channel->type !== 'telegram') {
+            return ['ok' => false, 'error' => 'Channel type must be telegram.'];
+        }
+
+        $webhookUrl = $base.'/api/integrations/telegram/webhooks/'.$channel->uuid;
+
+        try {
+            $api = new Api($botToken);
+            $params = ['url' => $webhookUrl];
+            $secret = $this->webhookSecret($channel);
+
+            if ($secret !== '') {
+                $params['secret_token'] = $secret;
+            }
+
+            $api->setWebhook($params);
+
+            return ['ok' => true, 'webhook_url' => $webhookUrl];
+        } catch (JsonException|Throwable $exception) {
+            return ['ok' => false, 'error' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * @return array{ok: true}|array{ok: false, error: string}
+     */
+    public function delete(AgentChannel $channel): array
+    {
+        $botToken = $this->botToken($channel);
+
+        if ($botToken === '') {
+            return ['ok' => false, 'error' => 'Channel has no bot_token in settings.'];
+        }
+
+        try {
+            (new Api($botToken))->deleteWebhook();
+
+            return ['ok' => true];
+        } catch (Throwable $exception) {
+            return ['ok' => false, 'error' => $exception->getMessage()];
+        }
+    }
+
+    private function resolveHttpsBaseUrl(): ?string
+    {
+        $base = rtrim((string) config('app.public_url'), '/');
+
+        if ($base === '' || parse_url($base, PHP_URL_SCHEME) !== 'https') {
+            return null;
+        }
+
+        return $base;
+    }
+
+    private function botToken(AgentChannel $channel): string
+    {
+        $settings = is_array($channel->settings) ? $channel->settings : [];
+
+        return isset($settings['bot_token']) && is_string($settings['bot_token'])
+            ? trim($settings['bot_token'])
+            : '';
+    }
+
+    private function webhookSecret(AgentChannel $channel): string
+    {
+        $settings = is_array($channel->settings) ? $channel->settings : [];
+
+        return isset($settings['webhook_secret']) && is_string($settings['webhook_secret'])
+            ? trim($settings['webhook_secret'])
+            : '';
+    }
+}
