@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Mcp\Models\McpServer;
 use App\Models\AiProviderModel;
+use App\Neuron\BuiltinRuntimeTools;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -101,7 +102,7 @@ class StoreAgentRequest extends FormRequest
                         continue;
                     }
 
-                    if (in_array($slug, ['remote_a2a_agent', 'get_agent_card'], true)) {
+                    if (BuiltinRuntimeTools::isBuiltin($slug)) {
                         continue;
                     }
 

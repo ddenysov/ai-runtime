@@ -167,6 +167,34 @@ class AgentTest extends TestCase
             ->assertJsonPath('versions.0.version', 1);
     }
 
+    public function test_can_update_agent_with_roll_dice_builtin_tool(): void
+    {
+        $providerModel = $this->providerModel();
+        $agent = Agent::query()->create([
+            'slug' => 'dice-master',
+            'name' => 'Dice Master',
+            'ai_provider_model_id' => $providerModel->id,
+            'instructions' => ['background' => ['Roll dice when needed.']],
+            'is_active' => true,
+        ]);
+
+        $response = $this->putJson("/api/agents/{$agent->id}", [
+            'tools' => [
+                ['slug' => 'roll_dice', 'is_enabled' => true],
+            ],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonFragment(['slug' => 'roll_dice']);
+
+        $this->assertDatabaseHas('agent_tools', [
+            'agent_id' => $agent->id,
+            'slug' => 'roll_dice',
+            'is_enabled' => true,
+        ]);
+    }
+
     public function test_can_start_agent_chat_run_via_api(): void
     {
         $this->bindProvider(new EchoProvider);

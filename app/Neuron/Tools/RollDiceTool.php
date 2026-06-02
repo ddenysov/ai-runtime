@@ -52,15 +52,15 @@ class RollDiceTool extends Tool
     public function __invoke(
         string $notation,
         string $reason,
-        bool $advantage = false,
-        bool $disadvantage = false,
+        ?bool $advantage = null,
+        ?bool $disadvantage = null,
     ): string {
         try {
             $result = ($this->roller ?? new DiceRoller)->roll(
                 notation: $notation,
                 reason: $reason,
-                advantage: $advantage,
-                disadvantage: $disadvantage,
+                advantage: (bool) ($advantage ?? false),
+                disadvantage: (bool) ($disadvantage ?? false),
             );
 
             return json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);

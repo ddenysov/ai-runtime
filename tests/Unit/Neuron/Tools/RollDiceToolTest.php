@@ -39,6 +39,32 @@ class RollDiceToolTest extends TestCase
         $this->assertArrayNotHasKey('result', $payload);
     }
 
+    public function test_execute_treats_null_optional_flags_as_false(): void
+    {
+        $rolls = [14, 7];
+
+        $tool = new RollDiceTool(new DiceRoller(
+            randomInt: static function (int $min, int $max) use (&$rolls): int {
+                return array_shift($rolls);
+            },
+        ));
+
+        $tool->setInputs([
+            'notation' => '1d20+4',
+            'reason' => 'Ability check with advantage',
+            'advantage' => true,
+            'disadvantage' => null,
+        ]);
+
+        $tool->execute();
+
+        $payload = json_decode($tool->getResult(), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(18, $payload['result']);
+        $this->assertTrue($payload['details']['advantage']);
+        $this->assertFalse($payload['details']['disadvantage']);
+    }
+
     public function test_tool_exposes_required_properties(): void
     {
         $tool = new RollDiceTool;

@@ -5,6 +5,7 @@ namespace App\Neuron\Providers;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use NeuronAI\Chat\Messages\Message;
+use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Exceptions\HttpException;
 use NeuronAI\HttpClient\HttpClientInterface;
 use Throwable;
@@ -125,7 +126,7 @@ class LoggingAiProvider implements AIProviderInterface
             $payload['stop_reason'] = $stopReason;
         }
 
-        if ($content === null) {
+        if ($content === null && ! $response instanceof ToolCallMessage) {
             Log::channel('llm')->error('LLM response did not contain message content.', [
                 ...$payload,
                 'provider_raw_response' => $this->httpCapture?->lastResponse(),
