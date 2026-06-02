@@ -58,6 +58,10 @@ const saving = ref(false);
 const editLoading = ref(false);
 const editingUuid = ref(null);
 const editingVersion = ref(0);
+const editingTelegramMeta = ref({
+    telegram_webhook_https_ready: false,
+    telegram_has_bot_token: false,
+});
 const deleteDialogOpen = ref(false);
 const deleteTarget = ref(null);
 const webhookLoadingUuid = ref(null);
@@ -230,6 +234,10 @@ function openAddDialog() {
     editLoading.value = false;
     editingUuid.value = null;
     editingVersion.value = 0;
+    editingTelegramMeta.value = {
+        telegram_webhook_https_ready: false,
+        telegram_has_bot_token: false,
+    };
     resetForm();
     dialogOpen.value = true;
 }
@@ -276,6 +284,10 @@ async function openEditDialog(summary) {
         };
         applySettingsToForm(channel.settings ?? {}, typ);
         editingVersion.value = Number(channel.version ?? 0);
+        editingTelegramMeta.value = {
+            telegram_webhook_https_ready: !!channel.telegram_webhook_https_ready,
+            telegram_has_bot_token: !!channel.telegram_has_bot_token,
+        };
     } catch (error) {
         formError.value = error.message ?? 'Could not load channel.';
     } finally {
@@ -366,14 +378,68 @@ async function confirmDelete() {
     }
 }
 
+function channelHasBotToken(channel) {
+    if (channel?.telegram_has_bot_token) {
+        return true;
+    }
+
+    return form.value.telegram_bot_token.trim() !== '';
+}
+
+function canRegisterTelegramWebhook(channel) {
+    return channel?.type === 'telegram'
+        && channel.telegram_webhook_https_ready
+        && channelHasBotToken(channel);
+}
+
+function editDialogTelegramChannel() {
+    return {
+        uuid: editingUuid.value,
+        type: 'telegram',
+        telegram_webhook_https_ready: editingTelegramMeta.value.telegram_webhook_https_ready,
+        telegram_has_bot_token: channelHasBotToken(editingTelegramMeta.value),
+    };
+}
+
+function telegramWebhookRegisterHint(channel) {
+    if (channel?.type !== 'telegram') {
+        return '';
+    }
+
+    if (!channel.telegram_webhook_https_ready) {
+        return 'Set PUBLIC_APP_URL to a public HTTPS URL (e.g. ngrok) before registering.';
+    }
+
+    if (!channel.telegram_has_bot_token) {
+        return 'Save a bot token for this channel first.';
+    }
+
+    return '';
+}
+
 async function registerTelegramWebhook(channel) {
-    webhookLoadingUuid.value = channel.uuid;
+    const uuid = channel?.uuid ?? editingUuid.value;
+
+    if (!uuid) {
+        toast.error('Save the channel before registering a webhook.');
+
+        return;
+    }
+
+    if (!canRegisterTelegramWebhook(channel)) {
+        toast.error(telegramWebhookRegisterHint(channel) || 'Cannot register webhook for this channel.');
+
+        return;
+    }
+
+    webhookLoadingUuid.value = uuid;
 
     try {
-        const data = await setAgentChannelTelegramWebhook(channel.uuid);
+        const data = await setAgentChannelTelegramWebhook(uuid);
         toast.success('Telegram webhook registered', {
-            description: data?.data?.webhook_url ?? channel.telegram_webhook_url,
+            description: data?.data?.webhook_url ?? channel?.telegram_webhook_url,
         });
+        await loadChannels();
     } catch (error) {
         toast.error(firstError(error.data) ?? error.message ?? 'Webhook registration failed');
     } finally {
@@ -452,6 +518,12 @@ watch(() => props.agentId, loadChannels);
                     >
                         Webhook URL: {{ channel.telegram_webhook_url }}
                     </p>
+                    <p
+                        v-else-if="channel.type === 'telegram' && telegramWebhookRegisterHint(channel)"
+                        class="mt-2 text-sm text-amber-900 dark:text-amber-100"
+                    >
+                        {{ telegramWebhookRegisterHint(channel) }}
+                    </p>
                     <div class="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" @click="openEditDialog(channel)">
                             Edit
@@ -460,7 +532,8 @@ watch(() => props.agentId, loadChannels);
                             v-if="channel.type === 'telegram'"
                             size="sm"
                             variant="outline"
-                            :disabled="webhookLoadingUuid === channel.uuid"
+                            :disabled="webhookLoadingUuid === channel.uuid || !canRegisterTelegramWebhook(channel)"
+                            :title="telegramWebhookRegisterHint(channel) || undefined"
                             @click="registerTelegramWebhook(channel)"
                         >
                             <LoaderCircleIcon
@@ -576,6 +649,25 @@ watch(() => props.agentId, loadChannels);
                             class="font-mono text-xs"
                         />
                     </div>
+                    <Button
+                        v-if="dialogMode === 'edit' && editingUuid"
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        class="w-full"
+                        :disabled="webhookLoadingUuid === editingUuid || saving || editLoading || !canRegisterTelegramWebhook(editDialogTelegramChannel())"
+                        :title="telegramWebhookRegisterHint(editDialogTelegramChannel()) || undefined"
+                        @click="registerTelegramWebhook(editDialogTelegramChannel())"
+                    >
+                        <LoaderCircleIcon
+                            v-if="webhookLoadingUuid === editingUuid"
+                            class="mr-2 size-4 animate-spin"
+                        />
+                        Register webhook with Telegram
+                    </Button>
+                    <p class="app-muted-text text-xs">
+                        Calls Telegram setWebhook using PUBLIC_APP_URL. Save the channel first if you changed the bot token.
+                    </p>
                 </div>
 
                 <div

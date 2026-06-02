@@ -3,6 +3,7 @@
 namespace App\Channels\Http\Resources;
 
 use App\Channels\Models\AgentChannel;
+use App\Channels\Services\TelegramWebhookRegistrar;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -51,8 +52,13 @@ class AgentChannelResource extends JsonResource
         }
 
         if ($this->type === 'telegram') {
-            $data['telegram_webhook_url'] = rtrim((string) config('app.public_url'), '/')
-                .'/api/integrations/telegram/webhooks/'.$this->uuid;
+            $registrar = app(TelegramWebhookRegistrar::class);
+            $data['telegram_webhook_https_ready'] = TelegramWebhookRegistrar::resolvePublicHttpsBase() !== null;
+            $data['telegram_has_bot_token'] = in_array('bot_token', $settingsKeys, true);
+            $webhookUrl = $registrar->webhookUrlFor($this->resource);
+            if ($webhookUrl !== null) {
+                $data['telegram_webhook_url'] = $webhookUrl;
+            }
         }
 
         return $data;

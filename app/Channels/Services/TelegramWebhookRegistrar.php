@@ -9,12 +9,38 @@ use Throwable;
 
 final class TelegramWebhookRegistrar
 {
+    public static function resolvePublicHttpsBase(): ?string
+    {
+        $base = rtrim((string) config('app.public_url'), '/');
+
+        if ($base === '' || parse_url($base, PHP_URL_SCHEME) !== 'https') {
+            return null;
+        }
+
+        return $base;
+    }
+
+    public function webhookUrlFor(AgentChannel $channel): ?string
+    {
+        if ($channel->type !== 'telegram') {
+            return null;
+        }
+
+        $base = self::resolvePublicHttpsBase();
+
+        if ($base === null) {
+            return null;
+        }
+
+        return $base.'/api/integrations/telegram/webhooks/'.$channel->uuid;
+    }
+
     /**
      * @return array{ok: true, webhook_url: string}|array{ok: false, error: string}
      */
     public function set(AgentChannel $channel): array
     {
-        $base = $this->resolveHttpsBaseUrl();
+        $base = self::resolvePublicHttpsBase();
 
         if ($base === null) {
             return ['ok' => false, 'error' => 'PUBLIC_APP_URL or APP_URL must be a valid HTTPS URL.'];
@@ -30,7 +56,11 @@ final class TelegramWebhookRegistrar
             return ['ok' => false, 'error' => 'Channel type must be telegram.'];
         }
 
-        $webhookUrl = $base.'/api/integrations/telegram/webhooks/'.$channel->uuid;
+        $webhookUrl = $this->webhookUrlFor($channel);
+
+        if ($webhookUrl === null) {
+            return ['ok' => false, 'error' => 'Could not build webhook URL.'];
+        }
 
         try {
             $api = new Api($botToken);
@@ -67,17 +97,6 @@ final class TelegramWebhookRegistrar
         } catch (Throwable $exception) {
             return ['ok' => false, 'error' => $exception->getMessage()];
         }
-    }
-
-    private function resolveHttpsBaseUrl(): ?string
-    {
-        $base = rtrim((string) config('app.public_url'), '/');
-
-        if ($base === '' || parse_url($base, PHP_URL_SCHEME) !== 'https') {
-            return null;
-        }
-
-        return $base;
     }
 
     private function botToken(AgentChannel $channel): string

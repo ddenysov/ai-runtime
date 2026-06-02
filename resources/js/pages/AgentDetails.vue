@@ -828,7 +828,7 @@ onMounted(fetchAgent);
                                     </Button>
                                 </div>
                             </CardHeader>
-                            <CardContent class="space-y-5">
+                            <CardContent class="max-h-[min(60vh,32rem)] space-y-5 overflow-y-auto">
                                 <div
                                     v-for="section in instructionSections"
                                     :key="section.key"
