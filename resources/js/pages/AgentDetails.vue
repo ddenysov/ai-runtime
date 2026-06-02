@@ -7,6 +7,7 @@ import {
     CheckCircle2Icon,
     CircleAlertIcon,
     CheckIcon,
+    ChevronsUpDownIcon,
     ClockIcon,
     Code2Icon,
     FileJsonIcon,
@@ -28,6 +29,7 @@ import PageHeader from '@/components/app/PageHeader.vue';
 import StatusBadge from '@/components/data/StatusBadge.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Card,
     CardContent,
@@ -35,6 +37,19 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/components/ui/command';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import {
     Select,
     SelectContent,
@@ -44,7 +59,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { getAgent, listAiProviders, updateAgent } from '@/lib/api';
+import { getAgent, listAgents, listAiProviders, updateAgent } from '@/lib/api';
 import AgentToolsEditor from '@/features/agents/AgentToolsEditor.vue';
 import GenerateAgentPromptDialog from '@/features/agents/GenerateAgentPromptDialog.vue';
 import {
@@ -81,6 +96,13 @@ const instructionDraft = ref('');
 const savingInstruction = ref(false);
 const instructionError = ref('');
 const editingTools = ref(false);
+const editingSubagents = ref(false);
+const selectedSubagentSlugs = ref([]);
+const subagentOptions = ref([]);
+const loadingSubagentOptions = ref(false);
+const subagentOptionsError = ref('');
+const savingSubagents = ref(false);
+const subagentsError = ref('');
 const promptGeneratorOpen = ref(false);
 const emptyAgentTools = [];
 let requestSequence = 0;
@@ -125,6 +147,35 @@ const instructionSections = computed(() => formatInstructionSections(agent.value
 const inputModes = computed(() => normalizeList(agent.value?.input_modes));
 const outputModes = computed(() => normalizeList(agent.value?.output_modes));
 const subagents = computed(() => normalizeList(agent.value?.subagents));
+const selectedSubagentOptions = computed(() => selectedSubagentSlugs.value.map((slug) => (
+    availableSubagentOptions.value.find((option) => option.slug === slug) ?? {
+        slug,
+        name: slug,
+        description: 'Configured subagent.',
+    }
+)));
+const availableSubagentOptions = computed(() => {
+    const currentAgentSlug = agent.value?.slug;
+    const optionsBySlug = new Map();
+
+    for (const option of subagentOptions.value) {
+        if (option.slug !== currentAgentSlug) {
+            optionsBySlug.set(option.slug, option);
+        }
+    }
+
+    for (const slug of subagents.value) {
+        if (slug !== currentAgentSlug && !optionsBySlug.has(slug)) {
+            optionsBySlug.set(slug, {
+                slug,
+                name: slug,
+                description: 'Configured subagent.',
+            });
+        }
+    }
+
+    return [...optionsBySlug.values()].sort((current, next) => current.name.localeCompare(next.name));
+});
 
 const heroStats = computed(() => [
     {
@@ -265,6 +316,51 @@ function cancelProviderModelEdit() {
         : '';
 }
 
+async function fetchSubagentOptions() {
+    loadingSubagentOptions.value = true;
+    subagentOptionsError.value = '';
+
+    try {
+        const response = await listAgents({
+            perPage: 100,
+            sort: 'name',
+            includeProviderModel: false,
+            includeToolsCount: false,
+            includeVersionsCount: false,
+        });
+
+        subagentOptions.value = (response.data ?? []).map((entry) => ({
+            id: entry.id,
+            slug: entry.slug,
+            name: entry.name ?? entry.slug,
+            description: entry.description,
+            isActive: Boolean(entry.is_active),
+        }));
+    } catch (fetchError) {
+        subagentOptionsError.value = fetchError.message;
+    } finally {
+        loadingSubagentOptions.value = false;
+    }
+}
+
+function startSubagentsEdit() {
+    selectedSubagentSlugs.value = [...subagents.value];
+    subagentsError.value = '';
+    subagentOptionsError.value = '';
+    editingSubagents.value = true;
+
+    if (!subagentOptions.value.length) {
+        fetchSubagentOptions();
+    }
+}
+
+function cancelSubagentsEdit() {
+    editingSubagents.value = false;
+    selectedSubagentSlugs.value = [];
+    subagentsError.value = '';
+    subagentOptionsError.value = '';
+}
+
 function startInstructionEdit(section) {
     editingInstructionKey.value = section.key;
     instructionDraft.value = listToLines(agent.value?.instructions?.[section.key]);
@@ -369,6 +465,53 @@ async function saveProviderModel() {
     } finally {
         savingProviderModel.value = false;
     }
+}
+
+async function saveSubagents() {
+    const items = [...selectedSubagentSlugs.value];
+
+    if (items.join('\n') === subagents.value.join('\n')) {
+        cancelSubagentsEdit();
+        return;
+    }
+
+    savingSubagents.value = true;
+    subagentsError.value = '';
+
+    try {
+        const updated = await updateAgent(props.agentId, {
+            subagents: items,
+        });
+
+        agent.value = updated;
+        cancelSubagentsEdit();
+        toast.success('Allowed subagents updated');
+    } catch (saveError) {
+        const validationMessage = saveError.data?.errors?.subagents?.[0]
+            ?? Object.entries(saveError.data?.errors ?? {})
+                .find(([key]) => key.startsWith('subagents.'))?.[1]?.[0];
+
+        subagentsError.value = validationMessage ?? saveError.message;
+    } finally {
+        savingSubagents.value = false;
+    }
+}
+
+function isSubagentSelected(slug) {
+    return selectedSubagentSlugs.value.includes(slug);
+}
+
+function toggleSubagent(slug) {
+    if (isSubagentSelected(slug)) {
+        removeSubagent(slug);
+        return;
+    }
+
+    selectedSubagentSlugs.value = [...selectedSubagentSlugs.value, slug];
+}
+
+function removeSubagent(slug) {
+    selectedSubagentSlugs.value = selectedSubagentSlugs.value.filter((item) => item !== slug);
 }
 
 async function fetchAgent() {
@@ -524,6 +667,7 @@ function titleize(value) {
 watch(() => props.agentId, () => {
     editingProviderModel.value = false;
     editingTools.value = false;
+    cancelSubagentsEdit();
     cancelInstructionEdit();
     fetchAgent();
 });
@@ -1053,10 +1197,24 @@ onMounted(fetchAgent);
 
                         <Card class="app-surface">
                             <CardHeader>
-                                <CardTitle>I/O contract</CardTitle>
-                                <CardDescription>
-                                    Accepted request and response modes.
-                                </CardDescription>
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <CardTitle>I/O contract</CardTitle>
+                                        <CardDescription>
+                                            Accepted request and response modes.
+                                        </CardDescription>
+                                    </div>
+                                    <Button
+                                        v-if="!editingSubagents"
+                                        variant="ghost"
+                                        size="sm"
+                                        class="app-soft-control shrink-0"
+                                        @click="startSubagentsEdit"
+                                    >
+                                        <PencilIcon class="size-4" />
+                                        Edit subagents
+                                    </Button>
+                                </div>
                             </CardHeader>
                             <CardContent class="space-y-5">
                                 <div>
@@ -1094,20 +1252,138 @@ onMounted(fetchAgent);
                                 </div>
                                 <Separator />
                                 <div>
-                                    <p class="app-muted-text text-sm">Allowed subagents</p>
-                                    <div class="mt-2 flex flex-wrap gap-2">
-                                        <Badge
-                                            v-for="subagent in subagents"
-                                            :key="subagent"
-                                            variant="outline"
-                                            class="rounded-full"
-                                        >
-                                            {{ subagent }}
-                                        </Badge>
-                                        <p v-if="!subagents.length" class="app-muted-text text-sm">
-                                            No delegation allowlist.
+                                    <template v-if="editingSubagents">
+                                        <p class="app-muted-text text-sm">Allowed subagents</p>
+                                        <Popover>
+                                            <PopoverTrigger as-child>
+                                                <Button
+                                                    variant="outline"
+                                                    class="app-soft-control mt-2 w-full justify-between"
+                                                    :disabled="savingSubagents"
+                                                >
+                                                    <span class="truncate">
+                                                        {{ selectedSubagentSlugs.length ? `${selectedSubagentSlugs.length} selected` : 'Select subagents' }}
+                                                    </span>
+                                                    <ChevronsUpDownIcon class="size-4 opacity-50" />
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent class="w-[--reka-popover-trigger-width] p-0" align="start">
+                                                <Command>
+                                                    <CommandInput placeholder="Search agents..." />
+                                                    <CommandList>
+                                                        <CommandEmpty>
+                                                            {{ loadingSubagentOptions ? 'Loading agents...' : 'No agents found.' }}
+                                                        </CommandEmpty>
+                                                        <CommandGroup>
+                                                            <CommandItem
+                                                                v-for="option in availableSubagentOptions"
+                                                                :key="option.slug"
+                                                                :value="`${option.name} ${option.slug}`"
+                                                                class="items-start"
+                                                                @select.prevent="toggleSubagent(option.slug)"
+                                                            >
+                                                                <Checkbox
+                                                                    :checked="isSubagentSelected(option.slug)"
+                                                                    class="pointer-events-none mt-0.5"
+                                                                    tabindex="-1"
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <div class="min-w-0">
+                                                                    <div class="flex flex-wrap items-center gap-2">
+                                                                        <span class="font-medium">{{ option.name }}</span>
+                                                                        <Badge variant="outline" class="rounded-full font-mono text-[11px]">
+                                                                            {{ option.slug }}
+                                                                        </Badge>
+                                                                        <Badge
+                                                                            v-if="option.isActive === false"
+                                                                            variant="outline"
+                                                                            class="rounded-full text-muted-foreground"
+                                                                        >
+                                                                            Inactive
+                                                                        </Badge>
+                                                                    </div>
+                                                                    <p
+                                                                        v-if="option.description"
+                                                                        class="app-muted-text mt-1 line-clamp-2 text-xs"
+                                                                    >
+                                                                        {{ option.description }}
+                                                                    </p>
+                                                                </div>
+                                                            </CommandItem>
+                                                        </CommandGroup>
+                                                    </CommandList>
+                                                </Command>
+                                            </PopoverContent>
+                                        </Popover>
+                                        <div v-if="selectedSubagentOptions.length" class="mt-3 flex flex-wrap gap-2">
+                                            <Badge
+                                                v-for="option in selectedSubagentOptions"
+                                                :key="option.slug"
+                                                variant="secondary"
+                                                class="gap-1 rounded-full"
+                                            >
+                                                {{ option.slug }}
+                                                <button
+                                                    type="button"
+                                                    class="text-muted-foreground hover:text-foreground"
+                                                    :disabled="savingSubagents"
+                                                    :aria-label="`Remove ${option.slug}`"
+                                                    @click="removeSubagent(option.slug)"
+                                                >
+                                                    <XIcon class="size-3" />
+                                                </button>
+                                            </Badge>
+                                        </div>
+                                        <p class="app-muted-text mt-2 text-xs">
+                                            Selected agent slugs are injected into the runtime prompt and enforced by A2A tools.
                                         </p>
-                                    </div>
+                                        <p v-if="subagentOptionsError" class="mt-2 text-sm text-destructive">
+                                            {{ subagentOptionsError }}
+                                        </p>
+                                        <p v-if="subagentsError" class="mt-2 text-sm text-destructive">
+                                            {{ subagentsError }}
+                                        </p>
+                                        <div class="mt-3 flex flex-wrap gap-2">
+                                            <Button
+                                                size="sm"
+                                                :disabled="savingSubagents"
+                                                @click="saveSubagents"
+                                            >
+                                                <LoaderCircleIcon
+                                                    v-if="savingSubagents"
+                                                    class="size-4 animate-spin"
+                                                />
+                                                <CheckIcon v-else class="size-4" />
+                                                Save
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                class="app-soft-control"
+                                                :disabled="savingSubagents"
+                                                @click="cancelSubagentsEdit"
+                                            >
+                                                <XIcon class="size-4" />
+                                                Cancel
+                                            </Button>
+                                        </div>
+                                    </template>
+                                    <template v-else>
+                                        <p class="app-muted-text text-sm">Allowed subagents</p>
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            <Badge
+                                                v-for="subagent in subagents"
+                                                :key="subagent"
+                                                variant="outline"
+                                                class="rounded-full"
+                                            >
+                                                {{ subagent }}
+                                            </Badge>
+                                            <p v-if="!subagents.length" class="app-muted-text text-sm">
+                                                No delegation allowlist.
+                                            </p>
+                                        </div>
+                                    </template>
                                 </div>
                             </CardContent>
                         </Card>

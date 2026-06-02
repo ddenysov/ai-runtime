@@ -28,6 +28,8 @@ class UpdateAgentRequest extends FormRequest
             'instructions.steps.*' => ['required', 'string', 'max:2000'],
             'instructions.output' => ['sometimes', 'array'],
             'instructions.output.*' => ['required', 'string', 'max:2000'],
+            'subagents' => ['sometimes', 'array'],
+            'subagents.*' => ['required', 'string', 'max:255', 'regex:/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/', 'distinct'],
             'tools' => ['sometimes', 'array'],
             'tools.*.slug' => ['required', 'string', 'max:255', 'distinct'],
             'tools.*.is_enabled' => ['sometimes', 'boolean'],

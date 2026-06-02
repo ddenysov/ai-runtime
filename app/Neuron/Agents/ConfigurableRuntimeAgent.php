@@ -45,6 +45,13 @@ class ConfigurableRuntimeAgent extends Agent
         $subagents = $this->definition['available_subagent_cards'] ?? [];
 
         if ($subagents !== []) {
+            $allowedSubagentSlugs = collect($subagents)
+                ->pluck('slug')
+                ->filter()
+                ->values()
+                ->all();
+
+            $background[] = 'Allowed subagent slugs: '.implode(', ', $allowedSubagentSlugs).'. Only use these exact slugs with get_agent_card or remote_a2a_agent.';
             $background[] = 'Available subagents are summarized below. Use get_agent_card for full details before delegating if the summary is not enough.';
             $background[] = json_encode($subagents, JSON_THROW_ON_ERROR);
         }
