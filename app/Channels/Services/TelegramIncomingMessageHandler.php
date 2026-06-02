@@ -16,6 +16,7 @@ final class TelegramIncomingMessageHandler
     public function __construct(
         private readonly SendMessageAction $messages,
         private readonly TaskPayloadFactory $payloads,
+        private readonly TelegramOutboundMessenger $telegram,
     ) {}
 
     /**
@@ -69,6 +70,13 @@ final class TelegramIncomingMessageHandler
                 'context_id' => (string) Str::uuid(),
             ],
         );
+
+        if (TelegramChatSession::isNewChatRequest($text)) {
+            $thread->resetContext();
+            $this->telegram->sendChatNotice($channel, $chatId, TelegramChatSession::NEW_CHAT_ACK_MESSAGE);
+
+            return;
+        }
 
         $this->messages->handle(
             $agent->slug,

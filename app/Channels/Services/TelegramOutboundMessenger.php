@@ -3,6 +3,7 @@
 namespace App\Channels\Services;
 
 use App\Channels\Models\AgentChannel;
+use App\Channels\Models\AgentChannelThread;
 use App\Libs\Telegram\MarkdownToHtml;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
@@ -11,6 +12,34 @@ use Throwable;
 final class TelegramOutboundMessenger
 {
     private const CHUNK_LENGTH = 4000;
+
+    public function sendChatNotice(AgentChannel $channel, string $chatId, string $text): void
+    {
+        $text = trim($text);
+
+        if ($text === '') {
+            return;
+        }
+
+        $api = $this->resolveApi($channel);
+
+        if ($api === null) {
+            return;
+        }
+
+        try {
+            $api->sendMessage([
+                'chat_id' => $chatId,
+                'text' => $text,
+                ...TelegramChatSession::replyKeyboardMarkup(),
+            ]);
+        } catch (Throwable $exception) {
+            Log::error('Telegram notice failed.', [
+                'agent_channel_uuid' => $channel->uuid,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
 
     /**
      * @param  array<string, mixed>  $task
@@ -47,12 +76,19 @@ final class TelegramOutboundMessenger
             return;
         }
 
-        $settings = is_array($channel->settings) ? $channel->settings : [];
-        $botToken = isset($settings['bot_token']) && is_string($settings['bot_token'])
-            ? trim($settings['bot_token'])
-            : '';
+        if ($this->isSupersededSession($channel, $chatId, $task)) {
+            Log::info('Telegram delivery skipped: chat session was reset.', [
+                'agent_channel_uuid' => $channelUuid,
+                'task_id' => $task['id'] ?? null,
+                'task_context_id' => $task['contextId'] ?? null,
+            ]);
 
-        if ($botToken === '') {
+            return;
+        }
+
+        $api = $this->resolveApi($channel);
+
+        if ($api === null) {
             Log::warning('Telegram delivery skipped: channel has no bot_token.', [
                 'agent_channel_uuid' => $channelUuid,
                 'task_id' => $task['id'] ?? null,
@@ -62,7 +98,7 @@ final class TelegramOutboundMessenger
         }
 
         try {
-            $this->sendAssistantReplyChunks(new Api($botToken), $chatId, $text);
+            $this->sendAssistantReplyChunks($api, $chatId, $text);
         } catch (Throwable $exception) {
             Log::error('Telegram delivery failed.', [
                 'agent_channel_uuid' => $channelUuid,
@@ -72,26 +108,70 @@ final class TelegramOutboundMessenger
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $task
+     */
+    private function isSupersededSession(AgentChannel $channel, string $chatId, array $task): bool
+    {
+        $taskContextId = $task['contextId'] ?? null;
+
+        if (! is_string($taskContextId) || $taskContextId === '') {
+            return false;
+        }
+
+        $thread = AgentChannelThread::query()
+            ->where('agent_channel_id', $channel->id)
+            ->where('external_chat_id', $chatId)
+            ->first();
+
+        return $thread === null || $thread->context_id !== $taskContextId;
+    }
+
+    private function resolveApi(AgentChannel $channel): ?Api
+    {
+        $settings = is_array($channel->settings) ? $channel->settings : [];
+        $botToken = isset($settings['bot_token']) && is_string($settings['bot_token'])
+            ? trim($settings['bot_token'])
+            : '';
+
+        if ($botToken === '') {
+            return null;
+        }
+
+        return new Api($botToken);
+    }
+
     private function sendAssistantReplyChunks(Api $api, string $chatId, string $markdown): void
     {
         $html = MarkdownToHtml::convert($markdown);
-        $htmlChunks = $this->chunkUtf8PreferNewlines($html, self::CHUNK_LENGTH);
-        $htmlChunksSent = 0;
+        $chunks = [];
 
-        foreach ($htmlChunks as $chunk) {
+        foreach ($this->chunkUtf8PreferNewlines($html, self::CHUNK_LENGTH) as $chunk) {
             $chunk = trim($chunk);
 
-            if ($chunk === '') {
-                continue;
+            if ($chunk !== '') {
+                $chunks[] = $chunk;
+            }
+        }
+
+        $lastIndex = count($chunks) - 1;
+
+        foreach ($chunks as $index => $chunk) {
+            $parameters = [
+                'chat_id' => $chatId,
+                'text' => $chunk,
+                'parse_mode' => 'HTML',
+            ];
+
+            if ($index === $lastIndex) {
+                $parameters = [
+                    ...$parameters,
+                    ...TelegramChatSession::replyKeyboardMarkup(),
+                ];
             }
 
             try {
-                $api->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => $chunk,
-                    'parse_mode' => 'HTML',
-                ]);
-                $htmlChunksSent++;
+                $api->sendMessage($parameters);
             } catch (Throwable $exception) {
                 if (! $this->isTelegramHtmlParseFailure($exception)) {
                     throw $exception;
@@ -102,7 +182,7 @@ final class TelegramOutboundMessenger
                     'error' => $exception->getMessage(),
                 ]);
 
-                $this->sendPlainTextChunks($api, $chatId, $markdown);
+                $this->sendPlainTextChunks($api, $chatId, $markdown, withKeyboard: true);
 
                 return;
             }
@@ -152,7 +232,7 @@ final class TelegramOutboundMessenger
         return $chunks;
     }
 
-    private function sendPlainTextChunks(Api $api, string $chatId, string $text): void
+    private function sendPlainTextChunks(Api $api, string $chatId, string $text, bool $withKeyboard = false): void
     {
         $text = trim($text);
 
@@ -165,11 +245,21 @@ final class TelegramOutboundMessenger
 
         while ($offset < $length) {
             $chunk = mb_substr($text, $offset, self::CHUNK_LENGTH);
-            $api->sendMessage([
+            $nextOffset = $offset + mb_strlen($chunk);
+            $parameters = [
                 'chat_id' => $chatId,
                 'text' => $chunk,
-            ]);
-            $offset += mb_strlen($chunk);
+            ];
+
+            if ($withKeyboard && $nextOffset >= $length) {
+                $parameters = [
+                    ...$parameters,
+                    ...TelegramChatSession::replyKeyboardMarkup(),
+                ];
+            }
+
+            $api->sendMessage($parameters);
+            $offset = $nextOffset;
         }
     }
 
