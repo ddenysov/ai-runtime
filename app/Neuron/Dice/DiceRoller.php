@@ -8,6 +8,10 @@ final class DiceRoller
 
     private const MAX_DICE_PER_GROUP = 100;
 
+    private const MIN_DIFFICULTY = 1;
+
+    private const MAX_DIFFICULTY = 30;
+
     /**
      * @param  (callable(int, int): int)|null  $randomInt
      */
@@ -25,6 +29,8 @@ final class DiceRoller
         string $reason,
         bool $advantage = false,
         bool $disadvantage = false,
+        ?int $difficulty = null,
+        ?RollKind $rollKind = null,
     ): array {
         $reason = trim($reason);
 
@@ -42,7 +48,16 @@ final class DiceRoller
             );
         }
 
+        $this->validateDifficultyAndRollKind($difficulty, $rollKind, $reason);
+
         $parsed = $this->parser->parse($notation);
+
+        if ($difficulty !== null && ! $this->notationIncludesD20($parsed['groups'])) {
+            throw new InvalidDiceRollException(
+                'Invalid roll: difficulty only applies to rolls that include a d20.',
+                $reason,
+            );
+        }
         $advantageApplies = $this->advantageApplies($parsed['groups'], $advantage, $disadvantage);
 
         if (($advantage || $disadvantage) && ! $advantageApplies) {
@@ -73,6 +88,7 @@ final class DiceRoller
 
         $result = $diceTotal + $parsed['flat_modifier'];
         $natural = $this->resolveNaturalFlags($groupResults);
+        $effectiveRollKind = $rollKind ?? RollKind::Check;
 
         $details = [
             'summary' => $this->buildSummary(
@@ -99,7 +115,7 @@ final class DiceRoller
             ),
         ];
 
-        return [
+        $payload = [
             'reason' => $reason,
             'notation' => $this->buildNotation($parsed),
             'result' => $result,
@@ -107,6 +123,66 @@ final class DiceRoller
             'natural_failure' => $natural['natural_failure'],
             'details' => $details,
         ];
+
+        if ($difficulty !== null) {
+            $payload['difficulty'] = $difficulty;
+            $payload['roll_kind'] = $effectiveRollKind->value;
+            $payload['success'] = $this->resolveSuccess(
+                $result,
+                $difficulty,
+                $effectiveRollKind,
+                $natural,
+            );
+        }
+
+        return $payload;
+    }
+
+    private function validateDifficultyAndRollKind(?int $difficulty, ?RollKind $rollKind, string $reason): void
+    {
+        if ($difficulty === null) {
+            return;
+        }
+
+        if ($difficulty < self::MIN_DIFFICULTY || $difficulty > self::MAX_DIFFICULTY) {
+            throw new InvalidDiceRollException(
+                'Invalid roll: difficulty must be between '.self::MIN_DIFFICULTY.' and '.self::MAX_DIFFICULTY.'.',
+                $reason,
+            );
+        }
+
+    }
+
+    /**
+     * @param  list<array{count: int, sides: int}>  $groups
+     */
+    private function notationIncludesD20(array $groups): bool
+    {
+        foreach ($groups as $group) {
+            if ($group['sides'] === 20) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array{natural_success: bool, natural_failure: bool}  $natural
+     */
+    private function resolveSuccess(int $result, int $difficulty, RollKind $rollKind, array $natural): bool
+    {
+        if ($rollKind === RollKind::Attack) {
+            if ($natural['natural_failure']) {
+                return false;
+            }
+
+            if ($natural['natural_success']) {
+                return true;
+            }
+        }
+
+        return $result >= $difficulty;
     }
 
     /**

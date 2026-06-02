@@ -4,6 +4,7 @@ namespace Tests\Unit\Neuron\Dice;
 
 use App\Neuron\Dice\DiceRoller;
 use App\Neuron\Dice\InvalidDiceRollException;
+use App\Neuron\Dice\RollKind;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -36,6 +37,8 @@ class DiceRollerTest extends TestCase
         $this->assertSame($expected['natural_failure'], $result['natural_failure']);
         $this->assertArrayHasKey('details', $result);
         $this->assertArrayNotHasKey('error', $result);
+        $this->assertArrayNotHasKey('success', $result);
+        $this->assertArrayNotHasKey('difficulty', $result);
 
         foreach ($expected['details'] as $key => $value) {
             $this->assertSame($value, $result['details'][$key], "details.{$key} mismatch");
@@ -307,6 +310,137 @@ class DiceRollerTest extends TestCase
         $this->assertSame([7], $group['dropped']);
     }
 
+    #[DataProvider('difficultySuccessProvider')]
+    public function test_roll_computes_success_when_difficulty_is_set(
+        string $notation,
+        string $reason,
+        array $rolls,
+        bool $advantage,
+        bool $disadvantage,
+        int $difficulty,
+        RollKind $rollKind,
+        bool $expectedSuccess,
+    ): void {
+        $result = $this->rollerWithRolls(...$rolls)->roll(
+            notation: $notation,
+            reason: $reason,
+            advantage: $advantage,
+            disadvantage: $disadvantage,
+            difficulty: $difficulty,
+            rollKind: $rollKind,
+        );
+
+        $this->assertSame($difficulty, $result['difficulty']);
+        $this->assertSame($rollKind->value, $result['roll_kind']);
+        $this->assertSame($expectedSuccess, $result['success']);
+    }
+
+    /**
+     * @return iterable<string, array{string, string, list<int>, bool, bool, int, RollKind, bool}>
+     */
+    public static function difficultySuccessProvider(): iterable
+    {
+        yield 'check meets DC' => [
+            '1d20+7',
+            'Ability check: Athletics',
+            [12],
+            false,
+            false,
+            15,
+            RollKind::Check,
+            true,
+        ];
+
+        yield 'check fails DC' => [
+            '1d20+7',
+            'Ability check: Athletics',
+            [7],
+            false,
+            false,
+            15,
+            RollKind::Check,
+            false,
+        ];
+
+        yield 'save meets DC' => [
+            '1d20+3',
+            'Saving throw: Dexterity',
+            [14],
+            false,
+            false,
+            16,
+            RollKind::Save,
+            true,
+        ];
+
+        yield 'attack meets AC' => [
+            '1d20+7',
+            'Attack roll: longsword',
+            [12],
+            false,
+            false,
+            15,
+            RollKind::Attack,
+            true,
+        ];
+
+        yield 'attack nat 20 hits above AC' => [
+            '1d20+2',
+            'Attack roll: longbow',
+            [20],
+            false,
+            false,
+            25,
+            RollKind::Attack,
+            true,
+        ];
+
+        yield 'attack nat 1 misses below AC' => [
+            '1d20+10',
+            'Attack roll: dagger',
+            [1],
+            false,
+            false,
+            10,
+            RollKind::Attack,
+            false,
+        ];
+
+        yield 'attack nat 1 misses even when total meets AC' => [
+            '1d20+10',
+            'Attack roll: dagger',
+            [1],
+            false,
+            false,
+            11,
+            RollKind::Attack,
+            false,
+        ];
+
+        yield 'check nat 20 still needs to meet DC' => [
+            '1d20+0',
+            'Ability check: Arcana',
+            [20],
+            false,
+            false,
+            25,
+            RollKind::Check,
+            false,
+        ];
+    }
+
+    public function test_roll_defaults_roll_kind_to_check_when_only_difficulty_given(): void
+    {
+        $result = $this->rollerWithRolls(10)->roll(
+            notation: '1d20+5',
+            reason: 'Ability check: Perception',
+            difficulty: 14,
+        );
+
+        $this->assertSame('check', $result['roll_kind']);
+        $this->assertTrue($result['success']);
+    }
+
     public function test_drop_lowest_details_show_dropped_values(): void
     {
         $result = $this->rollerWithRolls(4, 3, 2, 1)->roll(
@@ -327,6 +461,7 @@ class DiceRollerTest extends TestCase
         bool $advantage,
         bool $disadvantage,
         string $expectedMessage,
+        ?int $difficulty = null,
     ): void {
         $this->expectException(InvalidDiceRollException::class);
         $this->expectExceptionMessage($expectedMessage);
@@ -336,22 +471,25 @@ class DiceRollerTest extends TestCase
             reason: $reason,
             advantage: $advantage,
             disadvantage: $disadvantage,
+            difficulty: $difficulty,
         );
     }
 
     /**
-     * @return iterable<string, array{string, string, bool, bool, string}>
+     * @return iterable<string, array{string, string, bool, bool, string, int|null}>
      */
     public static function invalidRollProvider(): iterable
     {
-        yield 'reason too short' => ['1d20+5', 'ab', false, false, 'reason'];
-        yield 'reason empty' => ['1d20+5', '   ', false, false, 'reason'];
-        yield 'empty notation' => ['', 'Attack roll', false, false, 'notation'];
-        yield 'invalid notation' => ['not-dice', 'Attack roll', false, false, 'notation'];
-        yield 'unsupported die' => ['1d7', 'Attack roll', false, false, 'd7'];
-        yield 'advantage and disadvantage together' => ['1d20+5', 'Attack roll', true, true, 'advantage'];
-        yield 'advantage on non d20' => ['2d6+3', 'Damage roll', true, false, 'advantage'];
-        yield 'too many dice' => ['101d6', 'Damage roll', false, false, 'dice'];
+        yield 'reason too short' => ['1d20+5', 'ab', false, false, 'reason', null];
+        yield 'reason empty' => ['1d20+5', '   ', false, false, 'reason', null];
+        yield 'empty notation' => ['', 'Attack roll', false, false, 'notation', null];
+        yield 'invalid notation' => ['not-dice', 'Attack roll', false, false, 'notation', null];
+        yield 'unsupported die' => ['1d7', 'Attack roll', false, false, 'd7', null];
+        yield 'advantage and disadvantage together' => ['1d20+5', 'Attack roll', true, true, 'advantage', null];
+        yield 'advantage on non d20' => ['2d6+3', 'Damage roll', true, false, 'advantage', null];
+        yield 'too many dice' => ['101d6', 'Damage roll', false, false, 'dice', null];
+        yield 'difficulty too low' => ['1d20+5', 'Attack roll', false, false, 'difficulty', 0];
+        yield 'difficulty on non d20' => ['2d6+3', 'Damage roll', false, false, 'd20', 15];
     }
 
     /**

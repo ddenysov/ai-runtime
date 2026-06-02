@@ -23,6 +23,45 @@ class RollDiceToolTest extends TestCase
         $this->assertFalse($payload['natural_success']);
         $this->assertFalse($payload['natural_failure']);
         $this->assertArrayHasKey('details', $payload);
+        $this->assertArrayNotHasKey('success', $payload);
+    }
+
+    public function test_invoke_includes_success_when_difficulty_is_set(): void
+    {
+        $tool = new RollDiceTool(new DiceRoller(
+            randomInt: static fn (int $min, int $max): int => 12,
+        ));
+
+        $json = $tool(
+            notation: '1d20+7',
+            reason: 'Attack roll: longsword',
+            difficulty: 15,
+            roll_kind: 'attack',
+        );
+        $payload = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame(15, $payload['difficulty']);
+        $this->assertSame('attack', $payload['roll_kind']);
+        $this->assertTrue($payload['success']);
+        $this->assertSame(19, $payload['result']);
+    }
+
+    public function test_invoke_returns_error_for_invalid_roll_kind(): void
+    {
+        $tool = new RollDiceTool(new DiceRoller(
+            randomInt: static fn (int $min, int $max): int => 10,
+        ));
+
+        $json = $tool(
+            notation: '1d20+5',
+            reason: 'Attack roll: goblin',
+            difficulty: 12,
+            roll_kind: 'critical',
+        );
+        $payload = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertArrayHasKey('error', $payload);
+        $this->assertStringContainsString('roll_kind', $payload['error']);
     }
 
     public function test_invoke_returns_error_json_instead_of_throwing(): void
