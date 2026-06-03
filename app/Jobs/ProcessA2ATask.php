@@ -148,7 +148,7 @@ class ProcessA2ATask implements ShouldQueue
 
             $failed = $tasks->updateState($latestTask, $finalState, $failedMessage);
             $notifier->sendStatusUpdate($failed);
-            $telegram->deliverForTask($failed, $this->finalMessage($failure, 'processing'));
+            $telegram->deliverFailureForTask($failed, $this->finalMessage($failure, 'processing'));
             A2ATask::query()
                 ->whereKey($this->taskId)
                 ->update([

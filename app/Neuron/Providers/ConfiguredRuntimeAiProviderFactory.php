@@ -5,6 +5,7 @@ namespace App\Neuron\Providers;
 use App\Enums\AiProviderType;
 use App\Models\AiProvider;
 use App\Models\AiProviderModel;
+use App\Neuron\Providers\Gemini\GeminiThoughtSignatureProvider;
 use InvalidArgumentException;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Providers\Gemini\Gemini;
@@ -18,10 +19,13 @@ class ConfiguredRuntimeAiProviderFactory implements RuntimeAiProviderFactory
         $httpCapture = new CapturingAiProviderHttpClient();
 
         $providerInstance = match ($provider->type) {
-            AiProviderType::GEMINI => new Gemini(
-                key: (string) $provider->credential('key'),
-                model: $providerModel->model,
-                httpClient: $httpCapture,
+            AiProviderType::GEMINI => new GeminiThoughtSignatureProvider(
+                new Gemini(
+                    key: (string) $provider->credential('key'),
+                    model: $providerModel->model,
+                    httpClient: $httpCapture,
+                ),
+                $httpCapture,
             ),
         };
 

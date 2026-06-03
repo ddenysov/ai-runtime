@@ -13,6 +13,8 @@ final class TelegramOutboundMessenger
 {
     private const CHUNK_LENGTH = 4000;
 
+    public const RETRY_CALLBACK_PREFIX = 'retry:';
+
     public function sendChatNotice(AgentChannel $channel, string $chatId, string $text): void
     {
         $text = trim($text);
@@ -52,33 +54,17 @@ final class TelegramOutboundMessenger
             return;
         }
 
-        $delivery = $task['metadata']['delivery_channel'] ?? null;
+        $destination = $this->resolveTaskDestination($task);
 
-        if (! is_array($delivery) || ($delivery['type'] ?? null) !== 'telegram') {
+        if ($destination === null) {
             return;
         }
 
-        $channelUuid = $delivery['agent_channel_uuid'] ?? null;
-        $chatId = $delivery['external_chat_id'] ?? null;
-
-        if (! is_string($channelUuid) || trim($channelUuid) === ''
-            || ! is_string($chatId) || trim($chatId) === '') {
-            return;
-        }
-
-        $channel = AgentChannel::query()
-            ->where('uuid', $channelUuid)
-            ->where('type', 'telegram')
-            ->where('enabled', true)
-            ->first();
-
-        if ($channel === null) {
-            return;
-        }
+        [$channel, $chatId] = $destination;
 
         if ($this->isSupersededSession($channel, $chatId, $task)) {
             Log::info('Telegram delivery skipped: chat session was reset.', [
-                'agent_channel_uuid' => $channelUuid,
+                'agent_channel_uuid' => $channel->uuid,
                 'task_id' => $task['id'] ?? null,
                 'task_context_id' => $task['contextId'] ?? null,
             ]);
@@ -90,7 +76,7 @@ final class TelegramOutboundMessenger
 
         if ($api === null) {
             Log::warning('Telegram delivery skipped: channel has no bot_token.', [
-                'agent_channel_uuid' => $channelUuid,
+                'agent_channel_uuid' => $channel->uuid,
                 'task_id' => $task['id'] ?? null,
             ]);
 
@@ -101,8 +87,99 @@ final class TelegramOutboundMessenger
             $this->sendAssistantReplyChunks($api, $chatId, $text);
         } catch (Throwable $exception) {
             Log::error('Telegram delivery failed.', [
-                'agent_channel_uuid' => $channelUuid,
+                'agent_channel_uuid' => $channel->uuid,
                 'task_id' => $task['id'] ?? null,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $task
+     */
+    public function deliverFailureForTask(array $task, string $text): void
+    {
+        $text = trim($text);
+        $taskId = $task['id'] ?? null;
+
+        if ($text === '' || ! is_string($taskId) || $taskId === '') {
+            return;
+        }
+
+        $destination = $this->resolveTaskDestination($task);
+
+        if ($destination === null) {
+            return;
+        }
+
+        [$channel, $chatId] = $destination;
+
+        if ($this->isSupersededSession($channel, $chatId, $task)) {
+            Log::info('Telegram failure delivery skipped: chat session was reset.', [
+                'agent_channel_uuid' => $channel->uuid,
+                'task_id' => $taskId,
+                'task_context_id' => $task['contextId'] ?? null,
+            ]);
+
+            return;
+        }
+
+        $api = $this->resolveApi($channel);
+
+        if ($api === null) {
+            Log::warning('Telegram failure delivery skipped: channel has no bot_token.', [
+                'agent_channel_uuid' => $channel->uuid,
+                'task_id' => $taskId,
+            ]);
+
+            return;
+        }
+
+        try {
+            $api->sendMessage([
+                'chat_id' => $chatId,
+                'text' => $text."\n\nYou can try the same request again.",
+                'reply_markup' => json_encode([
+                    'inline_keyboard' => [
+                        [
+                            [
+                                'text' => 'Retry',
+                                'callback_data' => self::RETRY_CALLBACK_PREFIX.$taskId,
+                            ],
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ]);
+        } catch (Throwable $exception) {
+            Log::error('Telegram failure delivery failed.', [
+                'agent_channel_uuid' => $channel->uuid,
+                'task_id' => $taskId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    public function answerCallbackQuery(AgentChannel $channel, string $callbackQueryId, ?string $text = null): void
+    {
+        $api = $this->resolveApi($channel);
+
+        if ($api === null) {
+            return;
+        }
+
+        try {
+            $parameters = [
+                'callback_query_id' => $callbackQueryId,
+            ];
+
+            if ($text !== null && trim($text) !== '') {
+                $parameters['text'] = trim($text);
+            }
+
+            $api->answerCallbackQuery($parameters);
+        } catch (Throwable $exception) {
+            Log::error('Telegram callback answer failed.', [
+                'agent_channel_uuid' => $channel->uuid,
                 'error' => $exception->getMessage(),
             ]);
         }
@@ -125,6 +202,39 @@ final class TelegramOutboundMessenger
             ->first();
 
         return $thread === null || $thread->context_id !== $taskContextId;
+    }
+
+    /**
+     * @param  array<string, mixed>  $task
+     * @return array{0: AgentChannel, 1: string}|null
+     */
+    private function resolveTaskDestination(array $task): ?array
+    {
+        $delivery = $task['metadata']['delivery_channel'] ?? null;
+
+        if (! is_array($delivery) || ($delivery['type'] ?? null) !== 'telegram') {
+            return null;
+        }
+
+        $channelUuid = $delivery['agent_channel_uuid'] ?? null;
+        $chatId = $delivery['external_chat_id'] ?? null;
+
+        if (! is_string($channelUuid) || trim($channelUuid) === ''
+            || ! is_string($chatId) || trim($chatId) === '') {
+            return null;
+        }
+
+        $channel = AgentChannel::query()
+            ->where('uuid', $channelUuid)
+            ->where('type', 'telegram')
+            ->where('enabled', true)
+            ->first();
+
+        if (! $channel instanceof AgentChannel) {
+            return null;
+        }
+
+        return [$channel, $chatId];
     }
 
     private function resolveApi(AgentChannel $channel): ?Api
