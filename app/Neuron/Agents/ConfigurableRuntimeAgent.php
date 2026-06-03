@@ -5,6 +5,7 @@ namespace App\Neuron\Agents;
 use App\Models\AgentChatMessage;
 use App\Neuron\Nodes\RemoteA2AToolNode;
 use App\Neuron\RuntimeAgentContext;
+use App\Neuron\State\AgentStateSnapshotBuilder;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Middleware\Summarization;
@@ -56,6 +57,12 @@ class ConfigurableRuntimeAgent extends Agent
             $background[] = 'Allowed subagent slugs: '.implode(', ', $allowedSubagentSlugs).'. Only use these exact slugs with get_agent_card or remote_a2a_agent.';
             $background[] = 'Available subagents are summarized below. Use get_agent_card for full details before delegating if the summary is not enough.';
             $background[] = json_encode($subagents, JSON_THROW_ON_ERROR);
+        }
+
+        $stateBlock = $this->runtimeStatePromptBlock();
+
+        if ($stateBlock !== null) {
+            $background[] = $stateBlock;
         }
 
         return (string) new SystemPrompt(
@@ -132,5 +139,20 @@ class ConfigurableRuntimeAgent extends Agent
         }
 
         return $this->historyContextWindow();
+    }
+
+    private function runtimeStatePromptBlock(): ?string
+    {
+        if (! $this->context instanceof RuntimeAgentContext) {
+            return null;
+        }
+
+        $assignments = $this->definition['state_processors'] ?? [];
+
+        if (! is_array($assignments) || $assignments === []) {
+            return null;
+        }
+
+        return app(AgentStateSnapshotBuilder::class)->promptBlock($this->context, $assignments);
     }
 }

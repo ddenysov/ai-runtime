@@ -8,6 +8,7 @@ use App\Channels\Http\Controllers\TelegramAgentWebhookController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AgentInstructionsGeneratorController;
+use App\Http\Controllers\AgentStateProcessorController;
 use App\Http\Controllers\AiProviderController;
 use App\Http\Controllers\SettingsController;
 use App\Mcp\Http\Controllers\McpServerController;
@@ -36,6 +37,12 @@ Route::get('/agents/{agent}', [AgentController::class, 'show']);
 Route::post('/agents/{agent}/generate-instructions', [AgentInstructionsGeneratorController::class, 'store']);
 Route::put('/agents/{agent}', [AgentController::class, 'update']);
 Route::delete('/agents/{agent}', [AgentController::class, 'destroy']);
+
+Route::get('/agent-state-processors', [AgentStateProcessorController::class, 'index']);
+Route::post('/agent-state-processors', [AgentStateProcessorController::class, 'store']);
+Route::get('/agent-state-processors/{agentStateProcessor}', [AgentStateProcessorController::class, 'show']);
+Route::put('/agent-state-processors/{agentStateProcessor}', [AgentStateProcessorController::class, 'update']);
+Route::delete('/agent-state-processors/{agentStateProcessor}', [AgentStateProcessorController::class, 'destroy']);
 
 Route::get('/ai-providers', [AiProviderController::class, 'index']);
 Route::post('/ai-providers/test-connection', [AiProviderController::class, 'testConnection']);

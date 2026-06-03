@@ -27,19 +27,21 @@ class AgentStateStore
         string $title,
         mixed $content,
         ?string $entityType = null,
+        ?string $sourceKey = null,
         ?string $group = null,
         ?array $tags = null,
         ?string $summary = null,
     ): array {
         $resolvedScope = $this->resolveScope($context, $scope);
 
-        return DB::transaction(function () use ($context, $resolvedScope, $title, $content, $entityType, $group, $tags, $summary): array {
+        return DB::transaction(function () use ($context, $resolvedScope, $title, $content, $entityType, $sourceKey, $group, $tags, $summary): array {
             $entry = AgentStateEntry::query()->create([
                 'scope' => $resolvedScope['scope'],
                 'conversation_id' => $resolvedScope['conversation_id'],
                 'agent_slug' => $context->agentSlug,
                 'group_id' => $this->resolveGroup($resolvedScope, $group)?->id,
                 'entity_type' => $this->nullableTrim($entityType),
+                'source_key' => $this->nullableTrim($sourceKey),
                 'title' => $this->requiredTrim($title, 'title'),
                 'summary' => $this->nullableTrim($summary),
                 'content' => $this->normalizeContent($content),
@@ -61,11 +63,12 @@ class AgentStateStore
         ?string $title = null,
         mixed $content = null,
         ?string $entityType = null,
+        ?string $sourceKey = null,
         ?string $group = null,
         ?array $tags = null,
         ?string $summary = null,
     ): array {
-        return DB::transaction(function () use ($context, $id, $title, $content, $entityType, $group, $tags, $summary): array {
+        return DB::transaction(function () use ($context, $id, $title, $content, $entityType, $sourceKey, $group, $tags, $summary): array {
             $entry = $this->findVisibleEntry($context, $id);
             $resolvedScope = [
                 'scope' => $entry->scope,
@@ -84,6 +87,10 @@ class AgentStateStore
 
             if ($entityType !== null) {
                 $updates['entity_type'] = $this->nullableTrim($entityType);
+            }
+
+            if ($sourceKey !== null) {
+                $updates['source_key'] = $this->nullableTrim($sourceKey);
             }
 
             if ($summary !== null) {
@@ -117,6 +124,89 @@ class AgentStateStore
         return [
             'deleted' => true,
             'id' => $id,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>|null  $tags
+     * @return array<string, mixed>
+     */
+    public function upsertBySourceKey(
+        RuntimeAgentContext $context,
+        ?string $scope,
+        string $sourceKey,
+        string $title,
+        mixed $content,
+        ?string $entityType = null,
+        ?string $group = null,
+        ?array $tags = null,
+        ?string $summary = null,
+    ): array {
+        $sourceKey = $this->requiredTrim($sourceKey, 'source_key');
+        $resolvedScope = $this->resolveScope($context, $scope);
+        $entityType = $this->nullableTrim($entityType);
+
+        return DB::transaction(function () use ($context, $resolvedScope, $sourceKey, $title, $content, $entityType, $group, $tags, $summary): array {
+            $entry = AgentStateEntry::query()
+                ->where('scope', $resolvedScope['scope'])
+                ->where('conversation_id', $resolvedScope['conversation_id'])
+                ->where('agent_slug', $context->agentSlug)
+                ->where('entity_type', $entityType)
+                ->where('source_key', $sourceKey)
+                ->first();
+
+            if (! $entry instanceof AgentStateEntry) {
+                return $this->create(
+                    context: $context,
+                    scope: $resolvedScope['scope'],
+                    title: $title,
+                    content: $content,
+                    entityType: $entityType,
+                    sourceKey: $sourceKey,
+                    group: $group,
+                    tags: $tags,
+                    summary: $summary,
+                );
+            }
+
+            $entry->update([
+                'title' => $this->requiredTrim($title, 'title'),
+                'summary' => $this->nullableTrim($summary),
+                'content' => $this->normalizeContent($content),
+                'group_id' => $this->resolveGroup($resolvedScope, $group)?->id,
+            ]);
+
+            $this->syncTags($entry, $tags);
+
+            return $this->detail($entry->refresh()->load(['group', 'tags']));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function deleteBySourceKey(
+        RuntimeAgentContext $context,
+        ?string $scope,
+        string $sourceKey,
+        ?string $entityType = null,
+    ): array {
+        $resolvedScope = $this->resolveScope($context, $scope);
+        $sourceKey = $this->requiredTrim($sourceKey, 'source_key');
+        $entityType = $this->nullableTrim($entityType);
+
+        $deleted = AgentStateEntry::query()
+            ->where('scope', $resolvedScope['scope'])
+            ->where('conversation_id', $resolvedScope['conversation_id'])
+            ->where('agent_slug', $context->agentSlug)
+            ->where('entity_type', $entityType)
+            ->where('source_key', $sourceKey)
+            ->delete();
+
+        return [
+            'deleted' => $deleted > 0,
+            'source_key' => $sourceKey,
+            'entity_type' => $entityType,
         ];
     }
 
@@ -336,6 +426,7 @@ class AgentStateStore
             'agent_slug' => $entry->agent_slug,
             'title' => $entry->title,
             'entity_type' => $entry->entity_type,
+            'source_key' => $entry->source_key,
             'summary' => $entry->summary,
             'group' => $entry->group instanceof AgentStateGroup ? [
                 'id' => $entry->group->id,

@@ -11,7 +11,7 @@ class RuntimeAgentDefinitionRepository
     public function find(string $slug): ?array
     {
         $agent = Agent::query()
-            ->with(['providerModel.provider', 'tools'])
+            ->with(['providerModel.provider', 'tools', 'stateProcessorAssignments.processor.extractorAgent'])
             ->where('slug', $slug)
             ->first();
 

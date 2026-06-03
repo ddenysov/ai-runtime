@@ -42,6 +42,7 @@ class AgentController extends Controller
             ->allowedIncludes(
                 'providerModel.provider',
                 'tools',
+                'stateProcessorAssignments.processor.extractorAgent',
                 AllowedInclude::count('versionsCount'),
                 AllowedInclude::count('toolsCount'),
             )
@@ -56,9 +57,10 @@ class AgentController extends Controller
     {
         $validated = $request->validated();
         $tools = $validated['tools'] ?? [];
-        $agentAttributes = Arr::except($validated, 'tools');
+        $stateProcessors = $validated['state_processors'] ?? [];
+        $agentAttributes = Arr::except($validated, ['tools', 'state_processors']);
 
-        $agent = DB::transaction(function () use ($agentAttributes, $tools): Agent {
+        $agent = DB::transaction(function () use ($agentAttributes, $tools, $stateProcessors): Agent {
             $agent = Agent::query()->create([
                 ...$agentAttributes,
                 'input_modes' => $agentAttributes['input_modes'] ?? ['text/plain'],
@@ -69,14 +71,20 @@ class AgentController extends Controller
             ]);
 
             $this->syncAgentTools($agent, $tools);
+            $this->syncStateProcessorAssignments($agent, $stateProcessors);
 
-            $agent->load(['providerModel.provider', 'tools']);
+            $agent->load(['providerModel.provider', 'tools', 'stateProcessorAssignments.processor.extractorAgent']);
             $agent->createVersionSnapshot();
 
             return $agent;
         });
 
-        return response()->json($agent->load(['providerModel.provider', 'tools', 'versions']), 201);
+        return response()->json($agent->load([
+            'providerModel.provider',
+            'tools',
+            'stateProcessorAssignments.processor.extractorAgent',
+            'versions',
+        ]), 201);
     }
 
     public function show(Agent $agent): JsonResponse
@@ -85,6 +93,7 @@ class AgentController extends Controller
             $agent->load([
                 'providerModel.provider',
                 'tools',
+                'stateProcessorAssignments.processor.extractorAgent',
                 'versions' => fn ($query) => $query->latest('version'),
             ])
         );
@@ -94,9 +103,10 @@ class AgentController extends Controller
     {
         $validated = $request->validated();
         $tools = $validated['tools'] ?? null;
-        $agentAttributes = Arr::except($validated, 'tools');
+        $stateProcessors = $validated['state_processors'] ?? null;
+        $agentAttributes = Arr::except($validated, ['tools', 'state_processors']);
 
-        DB::transaction(function () use ($agent, $agentAttributes, $tools): void {
+        DB::transaction(function () use ($agent, $agentAttributes, $tools, $stateProcessors): void {
             if ($agentAttributes !== []) {
                 $agent->update($agentAttributes);
             }
@@ -104,12 +114,17 @@ class AgentController extends Controller
             if (is_array($tools)) {
                 $this->syncAgentTools($agent, $tools);
             }
+
+            if (is_array($stateProcessors)) {
+                $this->syncStateProcessorAssignments($agent, $stateProcessors);
+            }
         });
 
         return response()->json(
             $agent->load([
                 'providerModel.provider',
                 'tools',
+                'stateProcessorAssignments.processor.extractorAgent',
                 'versions' => fn ($query) => $query->latest('version'),
             ])
         );
@@ -134,6 +149,27 @@ class AgentController extends Controller
                 'slug' => $tool['slug'],
                 'is_enabled' => filter_var($tool['is_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
                 'config' => $tool['config'] ?? null,
+            ]);
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $stateProcessors
+     */
+    private function syncStateProcessorAssignments(Agent $agent, array $stateProcessors): void
+    {
+        $agent->stateProcessorAssignments()->delete();
+
+        foreach (array_values($stateProcessors) as $index => $assignment) {
+            $agent->stateProcessorAssignments()->create([
+                'agent_state_processor_id' => $assignment['agent_state_processor_id'],
+                'is_enabled' => filter_var($assignment['is_enabled'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                'trigger' => $assignment['trigger'] ?? 'after_response',
+                'scope' => $assignment['scope'] ?? 'conversation',
+                'injection_title' => $assignment['injection_title'] ?? 'Runtime State',
+                'injection_instructions' => $assignment['injection_instructions'] ?? null,
+                'state_filters' => $assignment['state_filters'] ?? null,
+                'sort_order' => $assignment['sort_order'] ?? $index,
             ]);
         }
     }

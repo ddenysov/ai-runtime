@@ -6,6 +6,7 @@ import Agents from '@/pages/Agents.vue';
 import Index from '@/pages/Index.vue';
 import McpServers from '@/pages/McpServers.vue';
 import Settings from '@/pages/Settings.vue';
+import StateProcessors from '@/pages/StateProcessors.vue';
 
 const routes = [
     {
@@ -40,6 +41,11 @@ const routes = [
         path: '/mcp-servers',
         name: 'mcp-servers',
         component: McpServers,
+    },
+    {
+        path: '/state-processors',
+        name: 'state-processors',
+        component: StateProcessors,
     },
     {
         path: '/settings',

@@ -61,6 +61,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { getAgent, listAgents, listAiProviders, updateAgent } from '@/lib/api';
 import AgentChannelsEditor from '@/features/agents/AgentChannelsEditor.vue';
+import AgentStateProcessorsEditor from '@/features/agents/AgentStateProcessorsEditor.vue';
 import AgentToolsEditor from '@/features/agents/AgentToolsEditor.vue';
 import GenerateAgentPromptDialog from '@/features/agents/GenerateAgentPromptDialog.vue';
 import {
@@ -97,6 +98,7 @@ const instructionDraft = ref('');
 const savingInstruction = ref(false);
 const instructionError = ref('');
 const editingTools = ref(false);
+const editingStateProcessors = ref(false);
 const editingSubagents = ref(false);
 const selectedSubagentSlugs = ref([]);
 const subagentOptions = ref([]);
@@ -141,6 +143,8 @@ const tools = computed(() => (agent.value?.tools ?? []).map((tool) => {
     };
 }));
 const enabledTools = computed(() => tools.value.filter((tool) => tool.is_enabled));
+const stateProcessorAssignments = computed(() => agent.value?.state_processor_assignments ?? []);
+const enabledStateProcessors = computed(() => stateProcessorAssignments.value.filter((assignment) => assignment.is_enabled));
 const versions = computed(() => [...(agent.value?.versions ?? [])]
     .sort((current, next) => (next.version ?? 0) - (current.version ?? 0)));
 const latestVersion = computed(() => versions.value[0]);
@@ -188,6 +192,11 @@ const heroStats = computed(() => [
         label: 'Tools',
         value: `${enabledTools.value.length}/${tools.value.length}`,
         detail: tools.value.length ? 'enabled runtime tools' : 'No tools configured',
+    },
+    {
+        label: 'State processors',
+        value: `${enabledStateProcessors.value.length}/${stateProcessorAssignments.value.length}`,
+        detail: stateProcessorAssignments.value.length ? 'post-response processors' : 'No processors assigned',
     },
     {
         label: 'Current version',
@@ -668,6 +677,7 @@ function titleize(value) {
 watch(() => props.agentId, () => {
     editingProviderModel.value = false;
     editingTools.value = false;
+    editingStateProcessors.value = false;
     cancelSubagentsEdit();
     cancelInstructionEdit();
     fetchAgent();
@@ -971,6 +981,26 @@ onMounted(fetchAgent);
                                         Use Manage tools to attach built-in runtime tools or MCP server tools.
                                     </p>
                                 </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card class="app-surface">
+                            <CardHeader>
+                                <div class="flex items-center gap-2">
+                                    <Settings2Icon class="app-muted-text size-4" />
+                                    <CardTitle>State processors</CardTitle>
+                                </div>
+                                <CardDescription>
+                                    Post-response extractors keep structured runtime state current for future turns.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <AgentStateProcessorsEditor
+                                    v-model:editing="editingStateProcessors"
+                                    :agent-id="agentId"
+                                    :assignments="stateProcessorAssignments"
+                                    @saved="agent = $event"
+                                />
                             </CardContent>
                         </Card>
 

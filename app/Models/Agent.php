@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Channels\Models\AgentChannel;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -58,6 +59,31 @@ class Agent extends Model
         return $this->hasMany(AgentTool::class);
     }
 
+    public function stateProcessorAssignments(): HasMany
+    {
+        return $this->hasMany(AgentStateProcessorAssignment::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function stateProcessors(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            AgentStateProcessor::class,
+            'agent_state_processor_assignments',
+            'agent_id',
+            'agent_state_processor_id',
+        )->withPivot([
+            'is_enabled',
+            'trigger',
+            'scope',
+            'injection_title',
+            'injection_instructions',
+            'state_filters',
+            'sort_order',
+        ])->withTimestamps();
+    }
+
     public function channels(): HasMany
     {
         return $this->hasMany(AgentChannel::class);
@@ -105,6 +131,31 @@ class Agent extends Model
                     'slug' => $tool->slug,
                     'config' => $tool->config ?? [],
                 ])
+                ->all(),
+            'state_processors' => $this->stateProcessorAssignments()
+                ->where('is_enabled', true)
+                ->with(['processor.extractorAgent'])
+                ->get()
+                ->filter(fn (AgentStateProcessorAssignment $assignment): bool => $assignment->processor?->is_active === true)
+                ->map(fn (AgentStateProcessorAssignment $assignment): array => [
+                    'id' => $assignment->id,
+                    'processor_id' => $assignment->processor->id,
+                    'processor_slug' => $assignment->processor->slug,
+                    'processor_name' => $assignment->processor->name,
+                    'extractor_agent_slug' => $assignment->processor->extractorAgent?->slug,
+                    'instructions' => $assignment->processor->instructions,
+                    'response_schema' => $assignment->processor->response_schema,
+                    'entity_types' => $assignment->processor->entity_types,
+                    'default_scope' => $assignment->processor->default_scope,
+                    'min_confidence' => $assignment->processor->min_confidence,
+                    'trigger' => $assignment->trigger,
+                    'scope' => $assignment->scope,
+                    'injection_title' => $assignment->injection_title,
+                    'injection_instructions' => $assignment->injection_instructions,
+                    'state_filters' => $assignment->state_filters ?? [],
+                    'sort_order' => $assignment->sort_order,
+                ])
+                ->values()
                 ->all(),
             'input_schema' => $this->input_schema,
             'output_schema' => $this->output_schema,

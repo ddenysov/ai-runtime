@@ -123,6 +123,7 @@ class ProcessA2ATask implements ShouldQueue
                 'resumable_at' => null,
             ]);
             $this->completeChildTaskIfNeeded($task, $artifact);
+            ProcessAgentStateProcessors::dispatch($run->id, $input, $response);
         } catch (WorkflowInterrupt $interrupt) {
             $run = $this->resolveRun($task, $task['metadata']['agent_slug'] ?? config('runtime-agents.default'));
             $run->update([

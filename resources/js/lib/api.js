@@ -312,6 +312,64 @@ export function deleteAgent(id) {
     });
 }
 
+export function listAgentStateProcessors({
+    search,
+    isActive,
+    extractorAgentId,
+    sort,
+    page,
+    perPage,
+    includeExtractorAgent = true,
+    includeAssignmentsCount = true,
+} = {}) {
+    const params = new URLSearchParams();
+
+    appendQueryParam(params, 'filter[search]', search);
+    appendQueryParam(params, 'filter[is_active]', isActive);
+    appendQueryParam(params, 'filter[extractor_agent_id]', extractorAgentId);
+    appendQueryParam(params, 'sort', sort);
+    appendQueryParam(params, 'page', page);
+    appendQueryParam(params, 'per_page', perPage);
+
+    const includes = [];
+
+    if (includeExtractorAgent) {
+        includes.push('extractorAgent');
+    }
+
+    if (includeAssignmentsCount) {
+        includes.push('assignmentsCount');
+    }
+
+    if (includes.length) {
+        params.set('include', includes.join(','));
+    }
+
+    const query = params.toString();
+
+    return apiFetch(`/api/agent-state-processors${query ? `?${query}` : ''}`);
+}
+
+export function createAgentStateProcessor(payload) {
+    return apiFetch('/api/agent-state-processors', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function updateAgentStateProcessor(id, payload) {
+    return apiFetch(`/api/agent-state-processors/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function deleteAgentStateProcessor(id) {
+    return apiFetch(`/api/agent-state-processors/${id}`, {
+        method: 'DELETE',
+    });
+}
+
 export function listAgentChannels({ agentId } = {}) {
     const params = new URLSearchParams();
 

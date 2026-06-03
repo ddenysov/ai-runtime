@@ -22,6 +22,7 @@ class AgentStateEntry extends Model
         'conversation_id',
         'agent_slug',
         'entity_type',
+        'source_key',
         'title',
         'summary',
         'content',

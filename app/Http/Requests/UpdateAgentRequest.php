@@ -40,6 +40,15 @@ class UpdateAgentRequest extends FormRequest
             'tools.*.config.title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'tools.*.config.description' => ['sometimes', 'nullable', 'string'],
             'tools.*.config.input_schema' => ['sometimes', 'nullable', 'array'],
+            'state_processors' => ['sometimes', 'array'],
+            'state_processors.*.agent_state_processor_id' => ['required', 'integer', 'exists:agent_state_processors,id', 'distinct'],
+            'state_processors.*.is_enabled' => ['sometimes', 'boolean'],
+            'state_processors.*.trigger' => ['sometimes', 'string', 'in:after_response'],
+            'state_processors.*.scope' => ['sometimes', 'string', 'in:conversation,global'],
+            'state_processors.*.injection_title' => ['sometimes', 'string', 'max:255'],
+            'state_processors.*.injection_instructions' => ['sometimes', 'nullable', 'string', 'max:4000'],
+            'state_processors.*.state_filters' => ['sometimes', 'nullable', 'array'],
+            'state_processors.*.sort_order' => ['sometimes', 'integer', 'min:0', 'max:1000'],
         ];
     }
 
