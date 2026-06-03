@@ -7,11 +7,13 @@ use App\Neuron\Nodes\RemoteA2AToolNode;
 use App\Neuron\RuntimeAgentContext;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\AgentState;
+use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Agent\Nodes\ParallelToolNode;
 use NeuronAI\Agent\SystemPrompt;
 use NeuronAI\Chat\History\EloquentChatHistory;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Tools\ToolInterface;
+use NeuronAI\Workflow\Middleware\WorkflowMiddleware;
 use NeuronAI\Workflow\Node;
 use NeuronAI\Workflow\Persistence\PersistenceInterface;
 
@@ -71,11 +73,29 @@ class ConfigurableRuntimeAgent extends Agent
             $state->setChatHistory(new EloquentChatHistory(
                 threadId: $this->context->historyThreadId(),
                 modelClass: AgentChatMessage::class,
-                contextWindow: $this->definition['history_context_window'] ?? 50000,
+                contextWindow: $this->chatHistoryTrimWindow(),
             ));
         }
 
         return $state;
+    }
+
+    /**
+     * @return WorkflowMiddleware[]
+     */
+    protected function globalMiddleware(): array
+    {
+        if (! config('runtime-agents.summarization.enabled', true)) {
+            return [];
+        }
+
+        return [
+            new Summarization(
+                provider: $this->configuredProvider,
+                maxTokens: $this->historyContextWindow(),
+                messagesToKeep: (int) config('runtime-agents.summarization.messages_to_keep', 5),
+            ),
+        ];
     }
 
     protected function tools(): array
@@ -98,5 +118,19 @@ class ConfigurableRuntimeAgent extends Agent
             ...$nodes,
             $toolNode,
         ]);
+    }
+
+    private function historyContextWindow(): int
+    {
+        return (int) ($this->definition['history_context_window'] ?? 50000);
+    }
+
+    private function chatHistoryTrimWindow(): int
+    {
+        if (config('runtime-agents.summarization.enabled', true)) {
+            return PHP_INT_MAX;
+        }
+
+        return $this->historyContextWindow();
     }
 }

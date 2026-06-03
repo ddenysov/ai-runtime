@@ -47,6 +47,11 @@ return [
         'final_ttl_minutes' => 60,
     ],
 
+    'summarization' => [
+        'enabled' => env('RUNTIME_AGENT_SUMMARIZATION_ENABLED', true),
+        'messages_to_keep' => env('RUNTIME_AGENT_SUMMARIZATION_MESSAGES_TO_KEEP', 5),
+    ],
+
     'invocation_limits' => [
         'max_depth' => env('A2A_MAX_INVOCATION_DEPTH', 5),
         'max_total_child_tasks' => env('A2A_MAX_TOTAL_CHILD_TASKS', 25),
