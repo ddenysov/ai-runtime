@@ -11,6 +11,11 @@ final class BuiltinRuntimeTools
         'remote_a2a_agent',
         'get_agent_card',
         'roll_dice',
+        'state_create',
+        'state_update',
+        'state_delete',
+        'state_list',
+        'state_get',
     ];
 
     public static function isBuiltin(string $slug): bool

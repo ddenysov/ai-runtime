@@ -14,6 +14,31 @@ export const runtimeTools = [
         label: 'Roll dice',
         description: 'Roll D&D dice with notation such as 1d20+7, 8d6, or 4d6dl1.',
     },
+    {
+        slug: 'state_create',
+        label: 'State: create',
+        description: 'Create a persistent state entity in the current conversation or global state.',
+    },
+    {
+        slug: 'state_update',
+        label: 'State: update',
+        description: 'Update an existing state entity by ID.',
+    },
+    {
+        slug: 'state_delete',
+        label: 'State: delete',
+        description: 'Delete a visible state entity by ID.',
+    },
+    {
+        slug: 'state_list',
+        label: 'State: list',
+        description: 'List visible state entities with filters for scope, group, tag, type, and search.',
+    },
+    {
+        slug: 'state_get',
+        label: 'State: get',
+        description: 'Get full details and content for a visible state entity by ID.',
+    },
 ];
 
 export function findRuntimeTool(slug) {
