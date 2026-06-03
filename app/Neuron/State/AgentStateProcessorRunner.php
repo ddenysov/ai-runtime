@@ -3,9 +3,11 @@
 namespace App\Neuron\State;
 
 use App\Models\AgentChatMessage;
+use App\Neuron\Agents\ConfigurableRuntimeAgent;
 use App\Neuron\RuntimeAgentContext;
 use App\Neuron\RuntimeAgentFactory;
 use Illuminate\Support\Facades\Log;
+use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\Messages\UserMessage;
 use Throwable;
 
@@ -38,11 +40,9 @@ class AgentStateProcessorRunner
             }
 
             try {
-                $response = $this->agents
-                    ->make($extractorAgentSlug)
-                    ->chat(new UserMessage($this->prompt($context, $assignment, $userMessage, $assistantMessage)))
-                    ->getMessage()
-                    ->getContent() ?? '';
+                $extractor = $this->agents->make($extractorAgentSlug);
+                $message = new UserMessage($this->prompt($context, $assignment, $userMessage, $assistantMessage));
+                $response = $this->runStructuredExtractor($extractor, $message, $assignment);
 
                 $payload = $this->parseJson($response);
                 $result = $this->mutations->apply($context, $assignment, $payload);
@@ -88,7 +88,6 @@ class AgentStateProcessorRunner
                 'slug' => $assignment['processor_slug'] ?? null,
                 'instructions' => $assignment['instructions'] ?? '',
                 'allowed_entity_types' => $assignment['entity_types'] ?? [],
-                'response_schema' => $assignment['response_schema'] ?? null,
                 'required_response_contract' => [
                     'mutations' => [
                         [
@@ -121,6 +120,104 @@ class AgentStateProcessorRunner
             'If nothing changed, return {"mutations":[]}.',
             json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $assignment
+     */
+    private function runStructuredExtractor(Agent $extractor, UserMessage $message, array $assignment): string
+    {
+        if (! $extractor instanceof ConfigurableRuntimeAgent) {
+            return $extractor
+                ->chat($message)
+                ->getMessage()
+                ->getContent() ?? '';
+        }
+
+        return $extractor
+            ->structuredWithSchema(
+                messages: $message,
+                schemaName: 'AgentStateProcessorResponse',
+                responseSchema: $this->responseSchema($assignment),
+            )
+            ->getContent() ?? '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $assignment
+     * @return array<string, mixed>
+     */
+    private function responseSchema(array $assignment): array
+    {
+        $schema = $assignment['response_schema'] ?? null;
+
+        if (is_array($schema) && $schema !== []) {
+            return $schema;
+        }
+
+        $entityTypes = collect($assignment['entity_types'] ?? [])
+            ->filter(fn (mixed $item): bool => is_string($item) && trim($item) !== '')
+            ->map(fn (string $item): string => trim($item))
+            ->values()
+            ->all();
+
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => [
+                'mutations' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'properties' => [
+                            'operation' => [
+                                'type' => 'string',
+                                'enum' => ['create', 'upsert', 'delete'],
+                            ],
+                            'scope' => [
+                                'type' => 'string',
+                                'enum' => ['conversation', 'global'],
+                            ],
+                            'entity_type' => [
+                                'type' => 'string',
+                                ...($entityTypes !== [] ? ['enum' => $entityTypes] : []),
+                            ],
+                            'source_key' => [
+                                'type' => ['string', 'null'],
+                            ],
+                            'title' => [
+                                'type' => ['string', 'null'],
+                            ],
+                            'summary' => [
+                                'type' => ['string', 'null'],
+                            ],
+                            'content' => [
+                                'type' => 'object',
+                                'additionalProperties' => true,
+                            ],
+                            'group' => [
+                                'type' => ['string', 'null'],
+                            ],
+                            'tags' => [
+                                'type' => 'array',
+                                'items' => ['type' => 'string'],
+                            ],
+                            'confidence' => [
+                                'type' => 'number',
+                                'minimum' => 0,
+                                'maximum' => 1,
+                            ],
+                            'evidence' => [
+                                'type' => ['string', 'null'],
+                            ],
+                        ],
+                        'required' => ['operation', 'entity_type'],
+                    ],
+                ],
+            ],
+            'required' => ['mutations'],
+        ];
     }
 
     /**

@@ -16,10 +16,10 @@ import {
 } from '@/components/ui/card';
 import {
     Dialog,
-    DialogContent,
     DialogDescription,
     DialogFooter,
     DialogHeader,
+    DialogScrollContent,
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
@@ -63,11 +63,19 @@ const form = reactive({
     extractor_agent_id: '',
     instructions: '',
     entity_types: '',
-    response_schema: '',
+    schema_fields: [],
     default_scope: 'conversation',
     min_confidence: 0.7,
     is_active: true,
 });
+
+const schemaFieldTypes = [
+    { value: 'string', label: 'Text' },
+    { value: 'number', label: 'Number' },
+    { value: 'boolean', label: 'Boolean' },
+    { value: 'object', label: 'Object' },
+    { value: 'array', label: 'List' },
+];
 
 const processorNavigation = computed(() => navigation.map((item) => ({
     ...item,
@@ -89,7 +97,7 @@ function resetForm() {
     form.extractor_agent_id = '';
     form.instructions = '';
     form.entity_types = '';
-    form.response_schema = '';
+    form.schema_fields = [];
     form.default_scope = 'conversation';
     form.min_confidence = 0.7;
     form.is_active = true;
@@ -101,38 +109,159 @@ function fieldError(name) {
     return errors?.length ? errors : undefined;
 }
 
-function setFieldError(name, errors) {
-    serverErrors.value = {
-        ...serverErrors.value,
-        [name]: errors,
-    };
-}
-
-function parseJsonObject(value, field) {
-    if (!value.trim()) {
-        return null;
-    }
-
-    try {
-        const parsed = JSON.parse(value);
-
-        if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-            setFieldError(field, ['Enter a JSON object.']);
-            return undefined;
-        }
-
-        return parsed;
-    } catch {
-        setFieldError(field, ['Enter valid JSON.']);
-        return undefined;
-    }
-}
-
 function parseEntityTypes(value) {
     return value
         .split(/[\n,]/)
         .map((item) => item.trim())
         .filter(Boolean);
+}
+
+function createSchemaField(overrides = {}) {
+    return {
+        name: '',
+        type: 'string',
+        required: true,
+        description: '',
+        ...overrides,
+    };
+}
+
+function addSchemaField() {
+    form.schema_fields.push(createSchemaField());
+}
+
+function removeSchemaField(index) {
+    form.schema_fields.splice(index, 1);
+}
+
+function schemaForField(field) {
+    const schema = {
+        type: field.type,
+    };
+
+    if (field.type === 'array') {
+        schema.items = { type: 'string' };
+    }
+
+    if (field.description.trim()) {
+        schema.description = field.description.trim();
+    }
+
+    return schema;
+}
+
+function buildResponseSchema() {
+    const contentProperties = {};
+    const requiredContentFields = [];
+
+    for (const field of form.schema_fields) {
+        const name = field.name.trim();
+
+        if (!name) {
+            continue;
+        }
+
+        contentProperties[name] = schemaForField(field);
+
+        if (field.required) {
+            requiredContentFields.push(name);
+        }
+    }
+
+    const entityTypes = parseEntityTypes(form.entity_types);
+    const contentSchema = {
+        type: 'object',
+        properties: contentProperties,
+        additionalProperties: true,
+    };
+
+    if (requiredContentFields.length) {
+        contentSchema.required = requiredContentFields;
+    }
+
+    const mutationProperties = {
+        operation: {
+            type: 'string',
+            enum: ['create', 'upsert', 'delete'],
+            description: 'Use upsert when source_key identifies persistent state.',
+        },
+        scope: {
+            type: 'string',
+            enum: ['conversation', 'global'],
+        },
+        entity_type: {
+            type: 'string',
+            ...(entityTypes.length ? { enum: entityTypes } : {}),
+        },
+        source_key: {
+            type: ['string', 'null'],
+            description: 'Stable key for upsert/delete, for example inventory:healing-potion.',
+        },
+        title: {
+            type: ['string', 'null'],
+        },
+        summary: {
+            type: ['string', 'null'],
+        },
+        content: contentSchema,
+        group: {
+            type: ['string', 'null'],
+        },
+        tags: {
+            type: 'array',
+            items: { type: 'string' },
+        },
+        confidence: {
+            type: 'number',
+            minimum: 0,
+            maximum: 1,
+        },
+        evidence: {
+            type: ['string', 'null'],
+        },
+    };
+
+    return {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+            mutations: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: mutationProperties,
+                    required: ['operation', 'entity_type'],
+                },
+            },
+        },
+        required: ['mutations'],
+    };
+}
+
+function schemaFieldsFromResponseSchema(schema) {
+    const properties = schema?.properties?.mutations?.items?.properties?.content?.properties;
+    const required = schema?.properties?.mutations?.items?.properties?.content?.required ?? [];
+
+    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+        return [];
+    }
+
+    return Object.entries(properties).map(([name, fieldSchema]) => {
+        const normalizedType = Array.isArray(fieldSchema?.type)
+            ? fieldSchema.type.find((type) => type !== 'null') ?? 'string'
+            : fieldSchema?.type;
+        const type = schemaFieldTypes.some((item) => item.value === normalizedType)
+            ? normalizedType
+            : 'string';
+
+        return createSchemaField({
+            name,
+            type,
+            required: required.includes(name),
+            description: fieldSchema?.description ?? '',
+        });
+    });
 }
 
 async function fetchProcessors() {
@@ -179,9 +308,7 @@ function openEditDialog(processor) {
     form.extractor_agent_id = String(processor.extractor_agent_id ?? '');
     form.instructions = processor.instructions ?? '';
     form.entity_types = (processor.entity_types ?? []).join('\n');
-    form.response_schema = processor.response_schema
-        ? JSON.stringify(processor.response_schema, null, 2)
-        : '';
+    form.schema_fields = schemaFieldsFromResponseSchema(processor.response_schema);
     form.default_scope = processor.default_scope ?? 'conversation';
     form.min_confidence = processor.min_confidence ?? 0.7;
     form.is_active = Boolean(processor.is_active);
@@ -191,19 +318,13 @@ function openEditDialog(processor) {
 async function saveProcessor() {
     serverErrors.value = {};
 
-    const responseSchema = parseJsonObject(form.response_schema, 'response_schema');
-
-    if (responseSchema === undefined) {
-        return;
-    }
-
     const payload = {
         name: form.name.trim(),
         slug: form.slug.trim(),
         extractor_agent_id: Number(form.extractor_agent_id),
         instructions: form.instructions.trim(),
         entity_types: parseEntityTypes(form.entity_types),
-        response_schema: responseSchema,
+        response_schema: buildResponseSchema(),
         default_scope: form.default_scope,
         min_confidence: Number(form.min_confidence),
         is_active: form.is_active,
@@ -369,7 +490,7 @@ onMounted(async () => {
         </div>
 
         <Dialog v-model:open="dialogOpen">
-            <DialogContent class="sm:max-w-3xl">
+            <DialogScrollContent class="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
                     <DialogTitle>{{ editingProcessor ? 'Edit state processor' : 'Create state processor' }}</DialogTitle>
                     <DialogDescription>
@@ -434,26 +555,79 @@ onMounted(async () => {
                         <FieldError :errors="fieldError('instructions')" />
                     </Field>
 
-                    <div class="grid gap-4 md:grid-cols-2">
-                        <Field>
-                            <FieldLabel>Entity types</FieldLabel>
-                            <Textarea
-                                v-model="form.entity_types"
-                                rows="5"
-                                placeholder="spell_slots&#10;inventory_item&#10;condition"
-                            />
-                            <FieldError :errors="fieldError('entity_types')" />
-                        </Field>
-                        <Field>
-                            <FieldLabel>Response schema</FieldLabel>
-                            <Textarea
-                                v-model="form.response_schema"
-                                rows="5"
-                                placeholder='{"type":"object","properties":{"mutations":{"type":"array"}}}'
-                            />
-                            <FieldError :errors="fieldError('response_schema')" />
-                        </Field>
-                    </div>
+                    <Field>
+                        <FieldLabel>Entity types</FieldLabel>
+                        <Textarea
+                            v-model="form.entity_types"
+                            rows="3"
+                            placeholder="spell_slots&#10;inventory_item&#10;condition"
+                        />
+                        <FieldError :errors="fieldError('entity_types')" />
+                    </Field>
+
+                    <Field>
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <FieldLabel>Content schema fields</FieldLabel>
+                                <p class="app-muted-text text-sm">
+                                    Add only the fields saved into state content. The mutations wrapper is generated automatically.
+                                </p>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" class="app-soft-control" @click="addSchemaField">
+                                <PlusIcon class="size-4" />
+                                Add field
+                            </Button>
+                        </div>
+
+                        <div v-if="form.schema_fields.length" class="mt-3 grid gap-3">
+                            <div
+                                v-for="(field, index) in form.schema_fields"
+                                :key="index"
+                                class="rounded-app-container grid gap-3 border p-3 md:grid-cols-[1fr_150px_110px_auto]"
+                            >
+                                <Input v-model="field.name" placeholder="field_name" />
+                                <Select v-model="field.type">
+                                    <SelectTrigger class="app-soft-control">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem
+                                            v-for="type in schemaFieldTypes"
+                                            :key="type.value"
+                                            :value="type.value"
+                                        >
+                                            {{ type.label }}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <div class="flex items-center justify-between gap-2 rounded-app-container border px-3">
+                                    <span class="text-sm">Required</span>
+                                    <Switch v-model="field.required" />
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    class="app-soft-control text-destructive"
+                                    @click="removeSchemaField(index)"
+                                >
+                                    <Trash2Icon class="size-4" />
+                                </Button>
+                                <Input
+                                    v-model="field.description"
+                                    class="md:col-span-4"
+                                    placeholder="Optional description for the extractor"
+                                />
+                            </div>
+                        </div>
+                        <p v-else class="app-muted-text mt-3 rounded-app-container border border-dashed p-4 text-sm">
+                            No content fields yet. The processor can still return mutations with free-form content.
+                        </p>
+                        <p class="app-muted-text mt-2 text-sm">
+                            Example: item_name as Text, quantity as Number, equipped as Boolean.
+                        </p>
+                        <FieldError :errors="fieldError('response_schema')" />
+                    </Field>
 
                     <div class="grid gap-4 md:grid-cols-2">
                         <Field>
@@ -479,7 +653,7 @@ onMounted(async () => {
                         {{ editingProcessor ? 'Save changes' : 'Create processor' }}
                     </Button>
                 </DialogFooter>
-            </DialogContent>
+            </DialogScrollContent>
         </Dialog>
     </AppShell>
 </template>

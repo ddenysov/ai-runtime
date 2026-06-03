@@ -12,6 +12,7 @@ use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Agent\Nodes\ParallelToolNode;
 use NeuronAI\Agent\SystemPrompt;
 use NeuronAI\Chat\History\EloquentChatHistory;
+use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Tools\ToolInterface;
 use NeuronAI\Workflow\Middleware\WorkflowMiddleware;
@@ -108,6 +109,26 @@ class ConfigurableRuntimeAgent extends Agent
     protected function tools(): array
     {
         return $this->configuredTools;
+    }
+
+    /**
+     * Run the configured provider with a runtime-defined JSON schema.
+     *
+     * Neuron's Agent::structured() generates schemas from PHP classes, but state
+     * processors store their schema in the database.
+     *
+     * @param  Message|Message[]  $messages
+     * @param  array<string, mixed>  $responseSchema
+     */
+    public function structuredWithSchema(
+        Message|array $messages,
+        string $schemaName,
+        array $responseSchema,
+    ): Message {
+        return $this->configuredProvider
+            ->systemPrompt($this->instructions())
+            ->setTools($this->configuredTools)
+            ->structured($messages, $schemaName, $responseSchema);
     }
 
     protected function compose(array|Node $nodes): void
