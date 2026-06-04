@@ -490,7 +490,9 @@ onBeforeUnmount(closeStream);
         v-model:workspace="selectedWorkspace"
         :workspaces="workspaces"
         :navigation="agentNavigation"
+        fixed-viewport
     >
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <PageHeader :title="agent?.name ? `Chat with ${agent.name}` : 'Agent chat'">
             <template #breadcrumbs>
                 <PageBreadcrumbs :items="['Workspaces', 'Agents', agent?.slug ?? 'Agent', 'Chat']" />
@@ -514,9 +516,9 @@ onBeforeUnmount(closeStream);
             </template>
         </PageHeader>
 
-        <div class="grid min-h-0 flex-1 gap-6 px-5 py-7 md:px-8 md:py-8 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <Card class="app-surface flex min-h-[680px] flex-col overflow-hidden">
-                <CardHeader class="border-b">
+        <div class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] gap-6 overflow-hidden px-5 py-4 md:px-8 md:py-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:grid-rows-none">
+            <Card class="app-surface flex min-h-0 flex-1 flex-col overflow-hidden">
+                <CardHeader class="shrink-0 border-b">
                     <div class="flex items-start justify-between gap-4">
                         <div>
                             <div class="flex items-center gap-2">
@@ -536,7 +538,7 @@ onBeforeUnmount(closeStream);
                 <CardContent class="flex min-h-0 flex-1 flex-col p-0">
                     <div
                         ref="messagesPanel"
-                        class="flex-1 space-y-4 overflow-y-auto p-5 md:p-6"
+                        class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 md:p-6"
                     >
                         <div
                             v-if="loading && !agent"
@@ -680,7 +682,7 @@ onBeforeUnmount(closeStream);
                         </template>
                     </div>
 
-                    <form class="border-t p-4 md:p-5" @submit.prevent="submitMessage">
+                    <form class="shrink-0 border-t p-4 md:p-5" @submit.prevent="submitMessage">
                         <Textarea
                             v-model="draft"
                             class="min-h-24 resize-none rounded-app-control"
@@ -702,7 +704,7 @@ onBeforeUnmount(closeStream);
                 </CardContent>
             </Card>
 
-            <aside class="space-y-6">
+            <aside class="shrink-0 space-y-6 xl:min-h-0 xl:overflow-y-auto">
                 <Card class="app-surface">
                     <CardHeader>
                         <CardTitle>Agent</CardTitle>
@@ -744,6 +746,7 @@ onBeforeUnmount(closeStream);
                     </CardContent>
                 </Card>
             </aside>
+        </div>
         </div>
     </AppShell>
 </template>

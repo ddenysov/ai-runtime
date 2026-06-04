@@ -11,7 +11,7 @@ defineProps({
 </script>
 
 <template>
-    <header class="app-page-header">
+    <header class="app-page-header shrink-0">
         <div class="app-page-header-content">
             <div>
                 <slot name="breadcrumbs" />

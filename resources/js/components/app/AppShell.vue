@@ -14,6 +14,10 @@ defineProps({
         type: Object,
         default: undefined,
     },
+    fixedViewport: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const selectedWorkspace = defineModel('workspace', {
@@ -23,16 +27,27 @@ const selectedWorkspace = defineModel('workspace', {
 </script>
 
 <template>
-    <main class="app-page-shell">
-        <div class="grid min-h-screen lg:grid-cols-[280px_1fr]">
+    <main
+        class="app-page-shell"
+        :class="fixedViewport ? 'h-screen overflow-hidden' : ''"
+    >
+        <div
+            class="grid lg:grid-cols-[280px_1fr]"
+            :class="fixedViewport ? 'h-full overflow-hidden' : 'min-h-screen'"
+        >
             <AppSidebar
                 v-model:workspace="selectedWorkspace"
+                class="min-h-0"
+                :class="fixedViewport ? 'h-full overflow-y-auto' : ''"
                 :workspaces="workspaces"
                 :navigation="navigation"
                 :promo="promo"
             />
 
-            <section class="flex min-w-0 flex-col">
+            <section
+                class="flex min-w-0 flex-col"
+                :class="fixedViewport ? 'h-full min-h-0 overflow-hidden' : ''"
+            >
                 <slot />
             </section>
         </div>
