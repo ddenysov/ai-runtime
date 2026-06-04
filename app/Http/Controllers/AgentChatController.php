@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\A2A\A2AState;
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
+use App\Models\A2AChildTask;
 use App\Models\A2ATask;
 use App\Models\Agent;
 use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
+use App\Models\AgentToolCall;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -221,8 +223,9 @@ class AgentChatController extends Controller
 
                 return [
                     'id' => (string) $message->id,
-                    'role' => $message->role === 'user' ? 'user' : 'assistant',
+                    'role' => $this->messageRole($message),
                     'content' => $content,
+                    'status' => $this->messageStatus($message),
                     'created_at' => $message->created_at?->toISOString(),
                 ];
             })
@@ -332,8 +335,208 @@ class AgentChatController extends Controller
                 'message' => $this->messageText($taskPayload['status']['message'] ?? null),
                 'artifact' => $this->artifactText($taskPayload['artifacts'] ?? []),
             ],
+            'activity' => $this->activity($run, $task),
             'terminal' => $this->terminal($taskState, $runState),
         ];
+    }
+
+    private function activity(AgentRun $run, ?A2ATask $task): array
+    {
+        $items = [
+            [
+                'id' => "run-{$run->id}",
+                'type' => 'run',
+                'title' => 'Agent run',
+                'status' => $run->state,
+                'detail' => $this->runActivityDetail($run),
+                'timestamp' => $run->created_at?->toISOString(),
+            ],
+        ];
+
+        $taskPayload = $task?->payload ?? [];
+        $taskMessage = $this->messageText($taskPayload['status']['message'] ?? null);
+        $artifact = $this->artifactText($taskPayload['artifacts'] ?? []);
+
+        if ($task instanceof A2ATask) {
+            $items[] = [
+                'id' => "task-{$task->id}",
+                'type' => 'task',
+                'title' => $artifact === null ? 'Agent status updated' : 'Agent response received',
+                'status' => $this->stateValue($taskPayload['status']['state'] ?? null),
+                'detail' => $this->excerpt($artifact ?? $taskMessage ?? 'Waiting for the agent response.'),
+                'timestamp' => $task->updated_at?->toISOString(),
+            ];
+        }
+
+        $items = [
+            ...$items,
+            ...$this->chatToolActivity($run),
+        ];
+
+        $toolCalls = AgentToolCall::query()
+            ->where('agent_run_id', $run->id)
+            ->oldest()
+            ->get();
+        $childTasks = A2AChildTask::query()
+            ->whereIn('tool_call_id', $toolCalls->pluck('id'))
+            ->get()
+            ->keyBy('tool_call_id');
+
+        foreach ($toolCalls as $toolCall) {
+            /** @var AgentToolCall $toolCall */
+            $childTask = $childTasks->get($toolCall->id);
+            $isSubagent = $toolCall->tool_name === 'remote_a2a_agent';
+            $resultText = $this->toolResultText($toolCall);
+            $errorText = $toolCall->error ?? $toolCall->error_kind;
+
+            $items[] = [
+                'id' => "tool-{$toolCall->id}",
+                'type' => $isSubagent ? 'subagent_tool' : 'tool',
+                'title' => $isSubagent ? 'Subagent tool called' : 'Tool called',
+                'status' => $toolCall->state,
+                'detail' => $this->excerpt($errorText ?? $resultText ?? $this->toolArgumentText($toolCall)),
+                'timestamp' => $toolCall->updated_at?->toISOString(),
+            ];
+
+            if ($childTask instanceof A2AChildTask) {
+                $items[] = [
+                    'id' => "child-task-{$childTask->id}",
+                    'type' => 'subagent',
+                    'title' => "Subagent {$childTask->remote_agent_slug}",
+                    'status' => $this->stateValue($childTask->state),
+                    'detail' => $this->excerpt($childTask->last_error_message ?? $this->childTaskDetail($childTask)),
+                    'timestamp' => $childTask->updated_at?->toISOString(),
+                ];
+            }
+        }
+
+        return collect($items)
+            ->filter(fn (array $item): bool => $item['detail'] !== null || $item['type'] === 'run')
+            ->values()
+            ->all();
+    }
+
+    private function chatToolActivity(AgentRun $run): array
+    {
+        $contextId = $run->input['context_id'] ?? null;
+
+        if (! is_string($contextId) || $contextId === '') {
+            return [];
+        }
+
+        return AgentChatMessage::query()
+            ->where('thread_id', "{$run->agent_slug}:{$contextId}")
+            ->where('meta->type', 'tool_call_result')
+            ->where('created_at', '>=', $run->created_at)
+            ->oldest()
+            ->get()
+            ->map(function (AgentChatMessage $message): ?array {
+                $detail = $this->toolCallResultText($message);
+
+                if ($detail === null || $detail === '') {
+                    return null;
+                }
+
+                return [
+                    'id' => "chat-tool-{$message->id}",
+                    'type' => 'tool',
+                    'title' => 'Tool result received',
+                    'status' => 'completed',
+                    'detail' => $this->excerpt($detail),
+                    'timestamp' => $message->created_at?->toISOString(),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function runActivityDetail(AgentRun $run): ?string
+    {
+        if ($run->last_error_message !== null) {
+            return $this->excerpt($run->last_error_message);
+        }
+
+        return match ($run->state) {
+            'submitted' => 'Queued for processing.',
+            'working' => 'Agent is thinking.',
+            'waiting_for_tool' => 'Waiting for a tool or subagent result.',
+            'completed' => 'Run completed.',
+            'failed' => 'Run failed.',
+            default => null,
+        };
+    }
+
+    private function toolArgumentText(AgentToolCall $toolCall): ?string
+    {
+        $arguments = is_array($toolCall->arguments) ? $toolCall->arguments : [];
+        $agentSlug = $arguments['agent_slug'] ?? null;
+        $message = $this->messageText($arguments['message'] ?? null);
+
+        if (is_string($agentSlug) && $message !== null && $message !== '') {
+            return "Calling {$agentSlug}: {$message}";
+        }
+
+        if (is_string($agentSlug)) {
+            return "Calling {$agentSlug}.";
+        }
+
+        return $message !== null && $message !== '' ? $message : $toolCall->tool_name;
+    }
+
+    private function toolResultText(AgentToolCall $toolCall): ?string
+    {
+        $resultPayload = is_array($toolCall->result) ? $toolCall->result : null;
+        $result = $this->messageText(
+            $resultPayload['artifact'] ?? $resultPayload['error'] ?? $resultPayload,
+        );
+
+        return $result === null || $result === '' ? null : "Result received: {$result}";
+    }
+
+    private function childTaskDetail(A2AChildTask $childTask): string
+    {
+        $notification = is_array($childTask->last_notification) ? $childTask->last_notification : [];
+        $artifact = $this->messageText($notification['artifact'] ?? null);
+        $statusMessage = $this->messageText($notification['status']['message'] ?? null);
+
+        if ($artifact !== null && $artifact !== '') {
+            return "Response received: {$artifact}";
+        }
+
+        if ($statusMessage !== null && $statusMessage !== '') {
+            return $statusMessage;
+        }
+
+        return 'Waiting for subagent result.';
+    }
+
+    private function stateValue(mixed $state): ?string
+    {
+        if ($state instanceof A2AState) {
+            return $state->value;
+        }
+
+        return is_string($state) ? $state : null;
+    }
+
+    private function excerpt(?string $text, int $limit = 180): ?string
+    {
+        if ($text === null) {
+            return null;
+        }
+
+        $text = trim(preg_replace('/\s+/', ' ', $text) ?? $text);
+
+        if ($text === '') {
+            return null;
+        }
+
+        if (mb_strlen($text) <= $limit) {
+            return $text;
+        }
+
+        return mb_substr($text, 0, $limit - 3).'...';
     }
 
     private function taskForRun(AgentRun $run): ?A2ATask
@@ -374,13 +577,116 @@ class AgentChatController extends Controller
 
     private function visibleMessageText(AgentChatMessage $message): ?string
     {
-        if (($message->meta['type'] ?? null) === 'tool_call_result') {
-            return null;
+        if ($this->isToolCallResult($message)) {
+            return $this->toolCallResultText($message);
         }
 
         $text = $this->messageText($message->content);
 
         return $text === '' ? null : $text;
+    }
+
+    private function messageRole(AgentChatMessage $message): string
+    {
+        if ($this->isToolCallResult($message)) {
+            return 'tool';
+        }
+
+        return $message->role === 'user' ? 'user' : 'assistant';
+    }
+
+    private function messageStatus(AgentChatMessage $message): ?string
+    {
+        return $this->isToolCallResult($message) ? 'Tool result' : null;
+    }
+
+    private function isToolCallResult(AgentChatMessage $message): bool
+    {
+        return ($message->meta['type'] ?? null) === 'tool_call_result';
+    }
+
+    private function toolCallResultText(AgentChatMessage $message): ?string
+    {
+        $tools = $message->meta['tools'] ?? [];
+
+        if (! is_array($tools) || $tools === []) {
+            return null;
+        }
+
+        return collect($tools)
+            ->map(function (mixed $tool): ?string {
+                if (! is_array($tool)) {
+                    return null;
+                }
+
+                $name = (string) ($tool['name'] ?? 'tool');
+                $inputs = is_array($tool['inputs'] ?? null) ? $tool['inputs'] : [];
+                $result = $this->decodeToolResult($tool['result'] ?? null);
+                $lines = ["Tool called: {$name}"];
+
+                $reason = $this->messageText($inputs['reason'] ?? null);
+                $notation = $this->messageText($inputs['notation'] ?? null);
+
+                if ($reason !== null && $reason !== '') {
+                    $lines[] = "Reason: {$reason}";
+                }
+
+                if ($notation !== null && $notation !== '') {
+                    $lines[] = "Input: {$notation}";
+                }
+
+                $summary = $this->toolResultSummary($result);
+
+                if ($summary !== null) {
+                    $lines[] = "Result received: {$summary}";
+                }
+
+                return implode("\n", $lines);
+            })
+            ->filter()
+            ->implode("\n\n") ?: null;
+    }
+
+    private function decodeToolResult(mixed $result): mixed
+    {
+        if (! is_string($result)) {
+            return $result;
+        }
+
+        try {
+            return json_decode($result, true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return $result;
+        }
+    }
+
+    private function toolResultSummary(mixed $result): ?string
+    {
+        if (! is_array($result)) {
+            return $this->messageText($result);
+        }
+
+        $parts = [];
+
+        if (array_key_exists('result', $result)) {
+            $parts[] = 'value '.$this->messageText($result['result']);
+        }
+
+        if (array_key_exists('success', $result)) {
+            $parts[] = ((bool) $result['success']) ? 'success' : 'failure';
+        }
+
+        $details = $this->messageText($result['details']['summary'] ?? null);
+
+        if ($details !== null && $details !== '') {
+            $parts[] = $details;
+        }
+
+        if ($parts !== []) {
+            return implode(' | ', $parts);
+        }
+
+        return $this->messageText($result);
     }
 
     private function messageText(mixed $message): ?string

@@ -10,6 +10,7 @@ import {
     RefreshCcwIcon,
     SendIcon,
     UserIcon,
+    WrenchIcon,
 } from '@lucide/vue';
 import AppShell from '@/components/app/AppShell.vue';
 import PageBreadcrumbs from '@/components/app/PageBreadcrumbs.vue';
@@ -51,6 +52,7 @@ const agent = ref(null);
 const draft = ref('');
 const messages = ref([]);
 const activeRunId = ref('');
+const activeRunActivity = ref([]);
 const chatContextId = ref(props.contextId || crypto.randomUUID());
 const streamStatus = ref('Idle');
 const messagesPanel = ref(null);
@@ -127,6 +129,7 @@ async function fetchChatHistory(contextId = props.contextId || '') {
             id: `history-${message.id}`,
             role: message.role,
             content: message.content,
+            status: message.status,
             createdAt: message.created_at ? new Date(message.created_at) : null,
             pending: false,
             persisted: true,
@@ -165,6 +168,7 @@ async function sendChatContent(content, existingUserMessage = null, options = {}
     editingRetryMessageId.value = '';
     retryDraft.value = '';
     activeRunId.value = '';
+    activeRunActivity.value = [];
     streamStatus.value = 'Submitting';
     closeStream();
     ensureContextRoute();
@@ -266,6 +270,8 @@ function applySnapshot(messageId, snapshot) {
     message.state = state;
     message.status = formatState(state);
     message.runId = snapshot.run?.id;
+    message.activity = normalizeRunActivity(snapshot.activity);
+    activeRunActivity.value = message.activity;
     message.content = artifact
         ?? statusMessage
         ?? pendingText(state);
@@ -327,11 +333,13 @@ function retryEditedMessage(message) {
 function resumeLatestRun(latestRun) {
     if (!latestRun?.run_id) {
         activeRunId.value = '';
+        activeRunActivity.value = [];
 
         return;
     }
 
     activeRunId.value = latestRun.run_id;
+    activeRunActivity.value = normalizeRunActivity(latestRun.snapshot?.activity);
 
     if (latestRun.snapshot?.terminal) {
         if (latestRun.snapshot.run?.last_error_message) {
@@ -381,6 +389,51 @@ function markAssistantFailed(messageId, message) {
     sending.value = false;
     closeStream();
     scrollToBottom();
+}
+
+function normalizeRunActivity(activity = []) {
+    if (!Array.isArray(activity)) {
+        return [];
+    }
+
+    return activity
+        .map((item) => ({
+            id: item.id ?? crypto.randomUUID(),
+            type: item.type ?? 'event',
+            title: item.title ?? 'Activity updated',
+            status: item.status ? formatState(item.status) : '',
+            detail: item.detail ?? '',
+            timestamp: item.timestamp ? new Date(item.timestamp) : null,
+        }))
+        .filter((item) => item.title || item.detail);
+}
+
+function activityTone(type) {
+    if (type === 'subagent' || type === 'subagent_tool') {
+        return 'border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-300';
+    }
+
+    if (type === 'tool') {
+        return 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300';
+    }
+
+    if (type === 'task') {
+        return 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300';
+    }
+
+    return 'border-muted bg-muted/30 text-muted-foreground';
+}
+
+function isUserMessage(message) {
+    return message.role === 'user';
+}
+
+function messageLabel(message) {
+    if (message.role === 'tool') {
+        return 'Tool';
+    }
+
+    return isUserMessage(message) ? 'You' : 'Agent';
 }
 
 function closeStream() {
@@ -455,6 +508,7 @@ watch(() => props.agentId, () => {
     closeStream();
     messages.value = [];
     activeRunId.value = '';
+    activeRunActivity.value = [];
     lastFailedUserMessageId.value = '';
     editingRetryMessageId.value = '';
     retryDraft.value = '';
@@ -471,6 +525,7 @@ watch(() => props.contextId, (contextId) => {
     closeStream();
     messages.value = [];
     activeRunId.value = '';
+    activeRunActivity.value = [];
     lastFailedUserMessageId.value = '';
     editingRetryMessageId.value = '';
     retryDraft.value = '';
@@ -578,30 +633,33 @@ onBeforeUnmount(closeStream);
                                 v-for="message in messages"
                                 :key="message.id"
                                 class="flex gap-3"
-                                :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
+                                :class="isUserMessage(message) ? 'justify-end' : 'justify-start'"
                             >
                                 <div
-                                    v-if="message.role === 'assistant'"
+                                    v-if="!isUserMessage(message)"
                                     class="app-surface-muted flex size-9 shrink-0 items-center justify-center rounded-full"
                                 >
-                                    <BotIcon class="size-4" />
+                                    <WrenchIcon v-if="message.role === 'tool'" class="size-4" />
+                                    <BotIcon v-else class="size-4" />
                                 </div>
 
                                 <div
                                     class="flex max-w-[min(760px,85%)] flex-col gap-2"
-                                    :class="message.role === 'user' ? 'items-end' : 'items-start'"
+                                    :class="isUserMessage(message) ? 'items-end' : 'items-start'"
                                 >
                                     <div
                                         class="w-full rounded-app-container border px-4 py-3 shadow-sm"
-                                        :class="message.role === 'user'
+                                        :class="isUserMessage(message)
                                             ? 'bg-primary text-primary-foreground'
-                                            : message.failed
+                                            : message.role === 'tool'
+                                                ? 'border-amber-500/30 bg-amber-500/5'
+                                                : message.failed
                                                 ? 'border-destructive/30 bg-destructive/5'
                                                 : 'bg-card'"
                                     >
                                         <div class="flex flex-wrap items-center gap-2">
                                             <p class="text-xs font-medium uppercase tracking-wide opacity-75">
-                                                {{ message.role === 'user' ? 'You' : 'Agent' }}
+                                                {{ messageLabel(message) }}
                                             </p>
                                             <Badge
                                                 v-if="message.status"
@@ -616,6 +674,34 @@ onBeforeUnmount(closeStream);
                                             </Badge>
                                         </div>
                                         <p class="mt-2 whitespace-pre-wrap text-sm leading-6">{{ message.content }}</p>
+                                        <div
+                                            v-if="message.role === 'assistant' && message.activity?.length"
+                                            class="mt-3 space-y-2 border-t pt-3"
+                                        >
+                                            <div
+                                                v-for="activity in message.activity.slice(-4)"
+                                                :key="activity.id"
+                                                class="rounded-app-control border px-3 py-2 text-xs"
+                                                :class="activityTone(activity.type)"
+                                            >
+                                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                                    <span class="font-medium">{{ activity.title }}</span>
+                                                    <Badge
+                                                        v-if="activity.status"
+                                                        variant="outline"
+                                                        class="rounded-full text-[10px]"
+                                                    >
+                                                        {{ activity.status }}
+                                                    </Badge>
+                                                </div>
+                                                <p
+                                                    v-if="activity.detail"
+                                                    class="mt-1 line-clamp-2 opacity-80"
+                                                >
+                                                    {{ activity.detail }}
+                                                </p>
+                                            </div>
+                                        </div>
                                         <p class="mt-2 text-xs opacity-60">{{ formatDate(message.createdAt) }}</p>
                                     </div>
 
@@ -673,7 +759,7 @@ onBeforeUnmount(closeStream);
                                 </div>
 
                                 <div
-                                    v-if="message.role === 'user'"
+                                    v-if="isUserMessage(message)"
                                     class="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-full"
                                 >
                                     <UserIcon class="size-4" />
@@ -738,10 +824,53 @@ onBeforeUnmount(closeStream);
                         </div>
 
                         <div class="rounded-app-container border p-4">
-                            <p class="app-muted-text text-sm">Active run</p>
+                            <div class="flex items-center justify-between gap-3">
+                                <p class="app-muted-text text-sm">Active run</p>
+                                <Badge
+                                    v-if="activeRunActivity.length"
+                                    variant="outline"
+                                    class="rounded-full text-[11px]"
+                                >
+                                    {{ activeRunActivity.length }} events
+                                </Badge>
+                            </div>
                             <p class="mt-1 break-all font-mono text-xs">
                                 {{ activeRunId || 'No active run' }}
                             </p>
+                            <div
+                                v-if="activeRunActivity.length"
+                                class="mt-4 space-y-3"
+                            >
+                                <div
+                                    v-for="activity in activeRunActivity.slice(-8)"
+                                    :key="activity.id"
+                                    class="rounded-app-control border px-3 py-2 text-xs"
+                                    :class="activityTone(activity.type)"
+                                >
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <span class="font-medium">{{ activity.title }}</span>
+                                        <Badge
+                                            v-if="activity.status"
+                                            variant="outline"
+                                            class="rounded-full text-[10px]"
+                                        >
+                                            {{ activity.status }}
+                                        </Badge>
+                                    </div>
+                                    <p
+                                        v-if="activity.detail"
+                                        class="mt-1 line-clamp-2 opacity-80"
+                                    >
+                                        {{ activity.detail }}
+                                    </p>
+                                    <p
+                                        v-if="activity.timestamp"
+                                        class="mt-1 opacity-60"
+                                    >
+                                        {{ formatDate(activity.timestamp) }}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
