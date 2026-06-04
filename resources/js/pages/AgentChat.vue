@@ -109,9 +109,7 @@ async function fetchAgent() {
     }
 }
 
-async function fetchChatHistory() {
-    const contextId = props.contextId || '';
-
+async function fetchChatHistory(contextId = props.contextId || '') {
     if (!contextId) {
         return;
     }
@@ -285,6 +283,10 @@ function applySnapshot(messageId, snapshot) {
         streamStatus.value = message.failed ? 'Failed' : 'Complete';
         sending.value = false;
         closeStream();
+
+        if (!message.failed) {
+            void fetchChatHistory(chatContextId.value);
+        }
     }
 
     scrollToBottom();

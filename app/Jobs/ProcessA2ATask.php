@@ -132,6 +132,7 @@ class ProcessA2ATask implements ShouldQueue
                 'conversation_state' => $interrupt->jsonSerialize(),
                 'resumable_at' => now(),
             ]);
+            $this->deliverLatestTelegramAssistantMessage($run, $task, $telegram);
         } catch (Throwable $exception) {
             $failure = $errors->classify($exception);
 
@@ -309,6 +310,83 @@ class ProcessA2ATask implements ShouldQueue
             ->value('role');
 
         return $latestPersistedRole === 'user' ? [] : [new UserMessage($input)];
+    }
+
+    private function deliverLatestTelegramAssistantMessage(
+        AgentRun $run,
+        array $task,
+        TelegramOutboundMessenger $telegram,
+    ): void {
+        if (($task['metadata']['delivery_channel']['type'] ?? null) !== 'telegram') {
+            return;
+        }
+
+        $contextId = $run->input['context_id'] ?? $run->id;
+        $message = AgentChatMessage::query()
+            ->where('thread_id', "{$run->agent_slug}:{$contextId}")
+            ->where('role', 'assistant')
+            ->latest('id')
+            ->first();
+
+        if (! $message instanceof AgentChatMessage) {
+            return;
+        }
+
+        $text = $this->messageText($message->content);
+
+        if ($text === null || $text === '') {
+            return;
+        }
+
+        $deliveredMessageIds = $run->output['telegram_intermediate_message_ids'] ?? [];
+        $deliveredMessageIds = is_array($deliveredMessageIds) ? $deliveredMessageIds : [];
+
+        if (in_array($message->id, $deliveredMessageIds, true)) {
+            return;
+        }
+
+        $telegram->deliverForTask($task, $text);
+        $run->update([
+            'output' => [
+                ...($run->output ?? []),
+                'telegram_intermediate_message_ids' => [
+                    ...$deliveredMessageIds,
+                    $message->id,
+                ],
+            ],
+        ]);
+    }
+
+    private function messageText(mixed $message): ?string
+    {
+        if ($message === null) {
+            return null;
+        }
+
+        if (is_string($message) || is_numeric($message) || is_bool($message)) {
+            return trim((string) $message);
+        }
+
+        if (! is_array($message)) {
+            return null;
+        }
+
+        if (isset($message['text'])) {
+            return $this->messageText($message['text']);
+        }
+
+        if (isset($message['content'])) {
+            return $this->messageText($message['content']);
+        }
+
+        if (array_is_list($message)) {
+            return collect($message)
+                ->map(fn (mixed $part): ?string => $this->messageText($part))
+                ->filter()
+                ->implode("\n") ?: null;
+        }
+
+        return null;
     }
 
     private function resolveRun(array $task, string $agentSlug): AgentRun

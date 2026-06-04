@@ -82,14 +82,15 @@ class AgentChatController extends Controller
         return response()->json($chats->through(function (object $chat) use ($agent, $messagesByThread, $latestRunsByContext, $prefix): array {
             $contextId = Str::after($chat->thread_id, $prefix);
             $threadMessages = $messagesByThread->get($chat->thread_id, collect());
-            $previewMessage = $threadMessages->firstWhere('role', 'user') ?? $threadMessages->first();
+            $previewMessage = $threadMessages
+                ->first(fn (AgentChatMessage $message): bool => $this->visibleMessageText($message) !== null);
             $latestRun = $latestRunsByContext->get($contextId);
 
             return [
                 'context_id' => $contextId,
                 'thread_id' => $chat->thread_id,
                 'preview' => $previewMessage instanceof AgentChatMessage
-                    ? Str::limit($this->messageText($previewMessage->content) ?? '', 180)
+                    ? Str::limit($this->visibleMessageText($previewMessage) ?? '', 180)
                     : '',
                 'messages_count' => (int) $chat->messages_count,
                 'started_at' => $chat->started_at,
@@ -211,12 +212,21 @@ class AgentChatController extends Controller
             ->where('thread_id', "{$agent->slug}:{$contextId}")
             ->oldest()
             ->get()
-            ->map(fn (AgentChatMessage $message): array => [
-                'id' => (string) $message->id,
-                'role' => $message->role === 'user' ? 'user' : 'assistant',
-                'content' => $this->messageText($message->content) ?? '',
-                'created_at' => $message->created_at?->toISOString(),
-            ])
+            ->map(function (AgentChatMessage $message): ?array {
+                $content = $this->visibleMessageText($message);
+
+                if ($content === null) {
+                    return null;
+                }
+
+                return [
+                    'id' => (string) $message->id,
+                    'role' => $message->role === 'user' ? 'user' : 'assistant',
+                    'content' => $content,
+                    'created_at' => $message->created_at?->toISOString(),
+                ];
+            })
+            ->filter()
             ->values();
 
         if ($messages->isEmpty() && $latestRun instanceof AgentRun) {
@@ -360,6 +370,17 @@ class AgentChatController extends Controller
         $artifact = collect($artifacts)->last();
 
         return is_array($artifact) ? $this->messageText($artifact) : null;
+    }
+
+    private function visibleMessageText(AgentChatMessage $message): ?string
+    {
+        if (($message->meta['type'] ?? null) === 'tool_call_result') {
+            return null;
+        }
+
+        $text = $this->messageText($message->content);
+
+        return $text === '' ? null : $text;
     }
 
     private function messageText(mixed $message): ?string

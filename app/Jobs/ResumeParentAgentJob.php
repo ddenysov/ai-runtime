@@ -10,7 +10,9 @@ use App\A2A\Recovery\A2ARetryPolicy;
 use App\A2A\RuntimeAgentPushNotifier;
 use App\A2A\RuntimeAgentTaskRepository;
 use App\A2A\TaskPayloadFactory;
+use App\Channels\Services\TelegramOutboundMessenger;
 use App\Models\A2AChildTask;
+use App\Models\AgentChatMessage;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
 use App\Neuron\RuntimeAgentContext;
@@ -42,6 +44,7 @@ class ResumeParentAgentJob implements ShouldQueue
         TaskPayloadFactory $payloads,
         A2AErrorClassifier $errors,
         A2ARetryPolicy $retryPolicy,
+        TelegramOutboundMessenger $telegram,
     ): void {
         $run = AgentRun::query()->find($this->agentRunId);
 
@@ -65,6 +68,7 @@ class ResumeParentAgentJob implements ShouldQueue
                 agentRunId: $run->id,
                 a2aTaskId: $run->input['a2a_task_id'] ?? null,
                 resumeToken: $run->workflow_resume_token,
+                conversationId: $run->input['context_id'] ?? null,
             ));
 
             $message = $agent
@@ -77,7 +81,11 @@ class ResumeParentAgentJob implements ShouldQueue
                 ->getContent() ?? '';
 
             $artifact = $payloads->artifact($message);
-            $this->completeA2ATask($run, $tasks, $notifier, $payloads, $message, $artifact);
+            $completed = $this->completeA2ATask($run, $tasks, $notifier, $payloads, $message, $artifact);
+
+            if ($completed !== null) {
+                $telegram->deliverForTask($completed, $message);
+            }
 
             $run->update([
                 'state' => 'completed',
@@ -106,6 +114,7 @@ class ResumeParentAgentJob implements ShouldQueue
                 'resumable_at' => now(),
             ]);
             $toolCall->update(['applied_at' => now()]);
+            $this->deliverLatestTelegramAssistantMessage($run, $tasks, $telegram);
         } catch (Throwable $exception) {
             $failure = $errors->classify($exception);
 
@@ -113,7 +122,12 @@ class ResumeParentAgentJob implements ShouldQueue
                 return;
             }
 
-            $this->failA2ATask($run, $tasks, $notifier, $payloads, $failure);
+            $failed = $this->failA2ATask($run, $tasks, $notifier, $payloads, $failure);
+
+            if ($failed !== null) {
+                $telegram->deliverFailureForTask($failed, $this->finalMessage($failure));
+            }
+
             $run->update([
                 'state' => 'failed',
                 'last_error_kind' => $failure->kind->value,
@@ -193,11 +207,11 @@ class ResumeParentAgentJob implements ShouldQueue
         TaskPayloadFactory $payloads,
         string $message,
         array $artifact,
-    ): void {
+    ): ?array {
         $taskId = $run->input['a2a_task_id'] ?? null;
 
         if (! is_string($taskId) || ($task = $tasks->find($taskId)) === null) {
-            return;
+            return null;
         }
 
         $agentMessage = $payloads->agentMessage($message);
@@ -220,6 +234,8 @@ class ResumeParentAgentJob implements ShouldQueue
         $tasks->save($completed);
         $notifier->sendArtifactUpdate($completed, $artifact);
         $notifier->sendStatusUpdate($completed);
+
+        return $completed;
     }
 
     private function failA2ATask(
@@ -228,6 +244,23 @@ class ResumeParentAgentJob implements ShouldQueue
         RuntimeAgentPushNotifier $notifier,
         TaskPayloadFactory $payloads,
         A2AFailure $failure,
+    ): ?array {
+        $taskId = $run->input['a2a_task_id'] ?? null;
+
+        if (! is_string($taskId) || ($task = $tasks->find($taskId)) === null) {
+            return null;
+        }
+
+        $failed = $tasks->updateState($task, $this->finalStateFor($failure), $payloads->agentMessage($this->finalMessage($failure)));
+        $notifier->sendStatusUpdate($failed);
+
+        return $failed;
+    }
+
+    private function deliverLatestTelegramAssistantMessage(
+        AgentRun $run,
+        RuntimeAgentTaskRepository $tasks,
+        TelegramOutboundMessenger $telegram,
     ): void {
         $taskId = $run->input['a2a_task_id'] ?? null;
 
@@ -235,8 +268,76 @@ class ResumeParentAgentJob implements ShouldQueue
             return;
         }
 
-        $failed = $tasks->updateState($task, $this->finalStateFor($failure), $payloads->agentMessage($this->finalMessage($failure)));
-        $notifier->sendStatusUpdate($failed);
+        if (($task['metadata']['delivery_channel']['type'] ?? null) !== 'telegram') {
+            return;
+        }
+
+        $contextId = $run->input['context_id'] ?? $run->id;
+        $message = AgentChatMessage::query()
+            ->where('thread_id', "{$run->agent_slug}:{$contextId}")
+            ->where('role', 'assistant')
+            ->latest('id')
+            ->first();
+
+        if (! $message instanceof AgentChatMessage) {
+            return;
+        }
+
+        $text = $this->messageText($message->content);
+
+        if ($text === null || $text === '') {
+            return;
+        }
+
+        $deliveredMessageIds = $run->output['telegram_intermediate_message_ids'] ?? [];
+        $deliveredMessageIds = is_array($deliveredMessageIds) ? $deliveredMessageIds : [];
+
+        if (in_array($message->id, $deliveredMessageIds, true)) {
+            return;
+        }
+
+        $telegram->deliverForTask($task, $text);
+        $run->update([
+            'output' => [
+                ...($run->output ?? []),
+                'telegram_intermediate_message_ids' => [
+                    ...$deliveredMessageIds,
+                    $message->id,
+                ],
+            ],
+        ]);
+    }
+
+    private function messageText(mixed $message): ?string
+    {
+        if ($message === null) {
+            return null;
+        }
+
+        if (is_string($message) || is_numeric($message) || is_bool($message)) {
+            return trim((string) $message);
+        }
+
+        if (! is_array($message)) {
+            return null;
+        }
+
+        if (isset($message['text'])) {
+            return $this->messageText($message['text']);
+        }
+
+        if (isset($message['content'])) {
+            return $this->messageText($message['content']);
+        }
+
+        if (array_is_list($message)) {
+            return collect($message)
+                ->map(fn (mixed $part): ?string => $this->messageText($part))
+                ->filter()
+                ->implode("\n") ?: null;
+        }
+
+        return null;
     }
 
     private function completeChildTaskIfNeeded(AgentRun $run, array $artifact): void
