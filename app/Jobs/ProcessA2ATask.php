@@ -108,7 +108,10 @@ class ProcessA2ATask implements ShouldQueue
                 ]);
             $notifier->sendArtifactUpdate($completed, $artifact);
             $notifier->sendStatusUpdate($completed);
-            $telegram->deliverForTask($completed, $response);
+            if (! $this->deliverPendingTelegramAssistantMessages($run, $completed, $telegram)) {
+                $telegram->deliverForTask($completed, $response);
+            }
+            $run->refresh();
             $run->update([
                 'state' => 'completed',
                 'last_error_kind' => null,
@@ -116,6 +119,7 @@ class ProcessA2ATask implements ShouldQueue
                 'next_attempt_at' => null,
                 'failed_at' => null,
                 'output' => [
+                    ...($run->output ?? []),
                     'message' => $response,
                     'artifact' => $artifact,
                 ],
@@ -132,7 +136,7 @@ class ProcessA2ATask implements ShouldQueue
                 'conversation_state' => $interrupt->jsonSerialize(),
                 'resumable_at' => now(),
             ]);
-            $this->deliverLatestTelegramAssistantMessage($run, $task, $telegram);
+            $this->deliverPendingTelegramAssistantMessages($run, $task, $telegram);
         } catch (Throwable $exception) {
             $failure = $errors->classify($exception);
 
@@ -312,49 +316,80 @@ class ProcessA2ATask implements ShouldQueue
         return $latestPersistedRole === 'user' ? [] : [new UserMessage($input)];
     }
 
-    private function deliverLatestTelegramAssistantMessage(
+    private function deliverPendingTelegramAssistantMessages(
         AgentRun $run,
         array $task,
         TelegramOutboundMessenger $telegram,
-    ): void {
+    ): bool {
         if (($task['metadata']['delivery_channel']['type'] ?? null) !== 'telegram') {
-            return;
+            return false;
         }
 
         $contextId = $run->input['context_id'] ?? $run->id;
-        $message = AgentChatMessage::query()
-            ->where('thread_id', "{$run->agent_slug}:{$contextId}")
-            ->where('role', 'assistant')
+        $threadId = "{$run->agent_slug}:{$contextId}";
+        $latestHumanUserMessageId = AgentChatMessage::query()
+            ->where('thread_id', $threadId)
+            ->where('role', 'user')
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('meta->type')
+                    ->orWhere('meta->type', '!=', 'tool_call_result');
+            })
             ->latest('id')
-            ->first();
-
-        if (! $message instanceof AgentChatMessage) {
-            return;
-        }
-
-        $text = $this->messageText($message->content);
-
-        if ($text === null || $text === '') {
-            return;
-        }
+            ->value('id') ?? 0;
 
         $deliveredMessageIds = $run->output['telegram_intermediate_message_ids'] ?? [];
-        $deliveredMessageIds = is_array($deliveredMessageIds) ? $deliveredMessageIds : [];
+        $deliveredMessageIds = is_array($deliveredMessageIds)
+            ? array_values(array_unique(array_filter(
+                array_map(fn (mixed $id): ?int => is_numeric($id) ? (int) $id : null, $deliveredMessageIds),
+                fn (?int $id): bool => $id !== null,
+            )))
+            : [];
 
-        if (in_array($message->id, $deliveredMessageIds, true)) {
-            return;
+        $query = AgentChatMessage::query()
+            ->where('thread_id', $threadId)
+            ->where('role', 'assistant')
+            ->where('id', '>', (int) $latestHumanUserMessageId)
+            ->oldest('id');
+
+        $messages = $query->get();
+
+        if ($messages->isEmpty()) {
+            return false;
         }
 
-        $telegram->deliverForTask($task, $text);
+        $newDeliveredMessageIds = $deliveredMessageIds;
+        $hasDeliverableMessages = false;
+
+        foreach ($messages as $message) {
+            $text = $this->messageText($message->content);
+
+            if ($text === null || $text === '') {
+                continue;
+            }
+
+            $hasDeliverableMessages = true;
+
+            if (in_array((int) $message->id, $deliveredMessageIds, true)) {
+                continue;
+            }
+
+            $telegram->deliverForTask($task, $text);
+            $newDeliveredMessageIds[] = $message->id;
+        }
+
+        if (count($newDeliveredMessageIds) === count($deliveredMessageIds)) {
+            return $hasDeliverableMessages;
+        }
+
         $run->update([
             'output' => [
                 ...($run->output ?? []),
-                'telegram_intermediate_message_ids' => [
-                    ...$deliveredMessageIds,
-                    $message->id,
-                ],
+                'telegram_intermediate_message_ids' => array_values(array_unique($newDeliveredMessageIds)),
             ],
         ]);
+
+        return $hasDeliverableMessages;
     }
 
     private function messageText(mixed $message): ?string
