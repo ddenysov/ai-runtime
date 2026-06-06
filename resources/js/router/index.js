@@ -4,11 +4,19 @@ import AgentChatHistory from '@/pages/AgentChatHistory.vue';
 import AgentDetails from '@/pages/AgentDetails.vue';
 import Agents from '@/pages/Agents.vue';
 import Index from '@/pages/Index.vue';
+import Login from '@/pages/Login.vue';
 import McpServers from '@/pages/McpServers.vue';
 import Settings from '@/pages/Settings.vue';
 import StateProcessors from '@/pages/StateProcessors.vue';
+import { loadCurrentUser } from '@/lib/auth';
 
 const routes = [
+    {
+        path: '/login',
+        name: 'login',
+        component: Login,
+        meta: { guestOnly: true },
+    },
     {
         path: '/',
         name: 'index',
@@ -57,4 +65,21 @@ const routes = [
 export const router = createRouter({
     history: createWebHistory(),
     routes,
+});
+
+router.beforeEach(async (to) => {
+    const user = await loadCurrentUser();
+
+    if (to.meta.guestOnly) {
+        return user ? { name: 'index' } : true;
+    }
+
+    if (!user) {
+        return {
+            name: 'login',
+            query: { redirect: to.fullPath },
+        };
+    }
+
+    return true;
 });

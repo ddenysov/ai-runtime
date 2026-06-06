@@ -1,12 +1,20 @@
 export async function apiFetch(url, options = {}) {
+    const {
+        authRedirect = true,
+        ...fetchOptions
+    } = options;
+    const method = (fetchOptions.method ?? 'GET').toUpperCase();
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     const headers = {
         Accept: 'application/json',
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        ...options.headers,
+        ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+        ...fetchOptions.headers,
     };
 
     const response = await fetch(url, {
-        ...options,
+        ...fetchOptions,
+        credentials: fetchOptions.credentials ?? 'same-origin',
         headers,
     });
 
@@ -21,14 +29,46 @@ export async function apiFetch(url, options = {}) {
         }
     }
 
+    const nextCsrfToken = data?.csrf_token;
+    if (typeof nextCsrfToken === 'string' && nextCsrfToken !== '') {
+        document.querySelector('meta[name="csrf-token"]')?.setAttribute('content', nextCsrfToken);
+    }
+
     if (!response.ok) {
         const error = new Error(data?.message ?? 'Request failed');
         error.status = response.status;
         error.data = data;
+
+        if (response.status === 401 && authRedirect && !window.location.pathname.startsWith('/login')) {
+            const redirect = `${window.location.pathname}${window.location.search}`;
+            window.location.assign(`/login?redirect=${encodeURIComponent(redirect)}`);
+        }
+
         throw error;
     }
 
     return data;
+}
+
+export function getCurrentUser() {
+    return apiFetch('/api/auth/user', {
+        authRedirect: false,
+    });
+}
+
+export function login(payload) {
+    return apiFetch('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        authRedirect: false,
+    });
+}
+
+export function logout() {
+    return apiFetch('/api/auth/logout', {
+        method: 'POST',
+        authRedirect: false,
+    });
 }
 
 function appendQueryParam(params, key, value) {
