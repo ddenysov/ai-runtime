@@ -127,6 +127,7 @@ async function fetchChatHistory(contextId = props.contextId || '') {
 
         messages.value = (response.messages ?? []).map((message) => ({
             id: `history-${message.id}`,
+            persistedMessageId: String(message.id),
             role: message.role,
             content: message.content,
             status: message.status,
@@ -272,7 +273,10 @@ function applySnapshot(messageId, snapshot) {
     message.runId = snapshot.run?.id;
     message.activity = normalizeRunActivity(snapshot.activity);
     activeRunActivity.value = message.activity;
-    message.content = artifact
+    const hasPersistedMessages = mergeSnapshotMessages(snapshot.messages, messageId);
+    message.content = hasPersistedMessages
+        ? pendingText(state)
+        : artifact
         ?? statusMessage
         ?? pendingText(state);
     message.pending = !snapshot.terminal;
@@ -290,12 +294,72 @@ function applySnapshot(messageId, snapshot) {
         sending.value = false;
         closeStream();
 
+        if (hasPersistedMessages && !message.failed) {
+            removeMessage(messageId);
+        }
+
         if (!message.failed) {
             void fetchChatHistory(chatContextId.value);
         }
     }
 
     scrollToBottom();
+}
+
+function mergeSnapshotMessages(snapshotMessages = [], runMessageId = '') {
+    if (!Array.isArray(snapshotMessages) || snapshotMessages.length === 0) {
+        return false;
+    }
+
+    const incomingMessages = snapshotMessages
+        .map(normalizeSnapshotMessage)
+        .filter(Boolean);
+
+    incomingMessages.forEach((incomingMessage) => {
+        const existingMessage = messages.value.find((item) => (
+            item.persistedMessageId
+            && item.persistedMessageId === incomingMessage.persistedMessageId
+        ));
+
+        if (existingMessage) {
+            Object.assign(existingMessage, incomingMessage);
+
+            return;
+        }
+
+        const runMessageIndex = messages.value.findIndex((item) => item.id === runMessageId);
+
+        if (runMessageIndex === -1) {
+            messages.value.push(incomingMessage);
+
+            return;
+        }
+
+        messages.value.splice(runMessageIndex, 0, incomingMessage);
+    });
+
+    return incomingMessages.length > 0;
+}
+
+function normalizeSnapshotMessage(message) {
+    if (!message?.id || !message.content) {
+        return null;
+    }
+
+    return {
+        id: `stream-${message.id}`,
+        persistedMessageId: String(message.id),
+        role: message.role,
+        content: message.content,
+        status: message.status,
+        createdAt: message.created_at ? new Date(message.created_at) : null,
+        pending: false,
+        persisted: true,
+    };
+}
+
+function removeMessage(messageId) {
+    messages.value = messages.value.filter((message) => message.id !== messageId);
 }
 
 function canRetryMessage(message) {

@@ -336,8 +336,58 @@ class AgentChatController extends Controller
                 'artifact' => $this->artifactText($taskPayload['artifacts'] ?? []),
             ],
             'activity' => $this->activity($run, $task),
+            'messages' => $this->runMessages($run),
             'terminal' => $this->terminal($taskState, $runState),
         ];
+    }
+
+    private function runMessages(AgentRun $run): array
+    {
+        $contextId = $run->input['context_id'] ?? null;
+
+        if (! is_string($contextId) || $contextId === '') {
+            return [];
+        }
+
+        $threadId = "{$run->agent_slug}:{$contextId}";
+        $latestUserMessageId = AgentChatMessage::query()
+            ->where('thread_id', $threadId)
+            ->where('role', 'user')
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('meta->type')
+                    ->orWhere('meta->type', '!=', 'tool_call_result');
+            })
+            ->latest('id')
+            ->value('id');
+
+        if ($latestUserMessageId === null) {
+            return [];
+        }
+
+        return AgentChatMessage::query()
+            ->where('thread_id', $threadId)
+            ->where('id', '>', (int) $latestUserMessageId)
+            ->oldest('id')
+            ->get()
+            ->map(function (AgentChatMessage $message): ?array {
+                $content = $this->visibleMessageText($message);
+
+                if ($content === null || $content === '') {
+                    return null;
+                }
+
+                return [
+                    'id' => (string) $message->id,
+                    'role' => $this->messageRole($message),
+                    'content' => $content,
+                    'status' => $this->messageStatus($message),
+                    'created_at' => $message->created_at?->toISOString(),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 
     private function activity(AgentRun $run, ?A2ATask $task): array
