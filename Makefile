@@ -6,7 +6,7 @@ COMPOSE := docker compose
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build up down restart ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all
+.PHONY: help build up down restart update ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable commands:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -21,6 +21,11 @@ down: ## Stop and remove containers
 	$(COMPOSE) down
 
 restart: down up ## Restart containers
+
+update: ## Pull latest code and restart containers
+	git pull
+	$(MAKE) down
+	$(MAKE) up
 
 ps: ## Show container status
 	$(COMPOSE) ps
