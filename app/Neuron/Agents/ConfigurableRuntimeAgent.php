@@ -66,6 +66,12 @@ class ConfigurableRuntimeAgent extends Agent
             $background[] = $stateBlock;
         }
 
+        $toolsBlock = $this->runtimeToolsPromptBlock();
+
+        if ($toolsBlock !== null) {
+            $background[] = $toolsBlock;
+        }
+
         return (string) new SystemPrompt(
             background: $background,
             steps: $instructions['steps'] ?? [],
@@ -160,6 +166,35 @@ class ConfigurableRuntimeAgent extends Agent
         }
 
         return $this->historyContextWindow();
+    }
+
+    private function runtimeToolsPromptBlock(): ?string
+    {
+        if ($this->configuredTools === []) {
+            return null;
+        }
+
+        $toolNames = collect($this->configuredTools)
+            ->map(static fn (ToolInterface $tool): string => $tool->getName())
+            ->unique()
+            ->values()
+            ->all();
+
+        $lines = [
+            'Tool invocation: registered function tools are '.implode(', ', $toolNames).'.',
+            'Always invoke them through native function calling.',
+            'Never simulate tool calls in player-facing text using bracket notation such as [roll_dice ...] or XML-style attributes.',
+        ];
+
+        if (in_array('roll_dice', $toolNames, true)) {
+            $lines[] = 'For every die roll, call roll_dice with notation, reason, and difficulty when a DC or AC applies. Wait for the tool result before stating the number or whether the roll succeeded.';
+        }
+
+        if (array_intersect($toolNames, ['state_create', 'state_update', 'state_delete', 'state_list', 'state_get']) !== []) {
+            $lines[] = 'For campaign memory changes, call the appropriate state_* tool instead of describing storage actions in prose.';
+        }
+
+        return implode(' ', $lines);
     }
 
     private function runtimeStatePromptBlock(): ?string

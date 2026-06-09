@@ -16,7 +16,7 @@ class RollDiceTool extends Tool
     ) {
         parent::__construct(
             name: 'roll_dice',
-            description: 'Roll dice for D&D using standard notation. Always provide a clear reason. Never invent random numbers. For attack rolls, saves, or ability checks against AC/DC, pass difficulty and roll_kind so success is computed in the tool.',
+            description: 'Roll dice for D&D using standard notation. Invoke this tool through native function calling only; never write [roll_dice ...] in chat text. Always provide a clear reason. Never invent random numbers. For attack rolls, saves, or ability checks against AC/DC, pass difficulty and roll_kind so success is computed in the tool.',
         );
     }
 

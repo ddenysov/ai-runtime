@@ -413,6 +413,7 @@ Solo play = **all randomness through roll_dice**. Player never rolls or reports 
 **Must use roll_dice for:** PC checks/saves/attacks/damage, initiative, enemy/NPC attacks and saves, trap damage, random tables, hidden Perception/Stealth contests.
 
 **Forbidden:**
+- Writing `[roll_dice ...]` or any bracket/XML-style pseudo tool call in chat — invoke the `roll_dice` function tool instead
 - Result before tool call
 - `"Let's say you rolled..."` / `"I roll and get..."`
 - Tailoring result to drama

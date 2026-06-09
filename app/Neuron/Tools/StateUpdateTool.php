@@ -5,6 +5,7 @@ namespace App\Neuron\Tools;
 use App\Neuron\RuntimeAgentContext;
 use App\Neuron\State\AgentStateStore;
 use App\Neuron\Tools\Concerns\ReturnsJsonToolResponses;
+use NeuronAI\Tools\ArrayProperty;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolProperty;
@@ -57,9 +58,8 @@ class StateUpdateTool extends Tool
                 description: 'Optional replacement group name. Pass an empty string to remove the group.',
                 required: false,
             ),
-            ToolProperty::make(
+            ArrayProperty::make(
                 name: 'tags',
-                type: PropertyType::ARRAY,
                 description: 'Optional replacement list of tag names. Pass an empty array to clear tags.',
                 required: false,
             ),

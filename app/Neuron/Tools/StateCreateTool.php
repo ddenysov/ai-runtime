@@ -5,6 +5,7 @@ namespace App\Neuron\Tools;
 use App\Neuron\RuntimeAgentContext;
 use App\Neuron\State\AgentStateStore;
 use App\Neuron\Tools\Concerns\ReturnsJsonToolResponses;
+use NeuronAI\Tools\ArrayProperty;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolProperty;
@@ -57,9 +58,8 @@ class StateCreateTool extends Tool
                 description: 'Optional logical folder or group name.',
                 required: false,
             ),
-            ToolProperty::make(
+            ArrayProperty::make(
                 name: 'tags',
-                type: PropertyType::ARRAY,
                 description: 'Optional list of tag names.',
                 required: false,
             ),
