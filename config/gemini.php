@@ -1,5 +1,59 @@
 <?php
 
+/**
+ * Pricing helpers — produce normalized price components for the catalog schema.
+ *
+ * @see meta.pricing_schema in the returned config
+ */
+$flatPrice = static fn (float $priceUsd): array => ['price_usd' => $priceUsd];
+
+$modalityPrice = static fn (array $pricesByModality): array => [
+    'rules' => collect($pricesByModality)
+        ->map(static fn (float $priceUsd, string $modality): array => [
+            'when' => ['modality' => $modality],
+            'price_usd' => $priceUsd,
+        ])
+        ->values()
+        ->all(),
+];
+
+$contextThresholdPrice = static fn (float $ltePrice, float $gtPrice, int $threshold = 200_000): array => [
+    'rules' => [
+        ['when' => ['context_tokens_lte' => $threshold], 'price_usd' => $ltePrice],
+        ['when' => ['context_tokens_gt' => $threshold], 'price_usd' => $gtPrice],
+    ],
+];
+
+$cacheStoragePrice = static fn (float $priceUsd, string $unit = 'per_hour_per_1m_tokens'): array => [
+    'price_usd' => $priceUsd,
+    'unit' => $unit,
+];
+
+$contextCaching = static function (
+    array|float $read,
+    float $storagePerHourPer1mTokens,
+) use ($flatPrice, $modalityPrice, $contextThresholdPrice, $cacheStoragePrice): array {
+    if (is_float($read)) {
+        $readComponent = $flatPrice($read);
+    } elseif (isset($read['lte_200k'])) {
+        $readComponent = $contextThresholdPrice($read['lte_200k'], $read['gt_200k']);
+    } else {
+        $readComponent = $modalityPrice($read);
+    }
+
+    return [
+        'read' => $readComponent,
+        'storage' => $cacheStoragePrice($storagePerHourPer1mTokens),
+    ];
+};
+
+$flashLiteModalityInput = static fn (float $text, float $audio): array => $modalityPrice([
+    'text' => $text,
+    'image' => $text,
+    'video' => $text,
+    'audio' => $audio,
+]);
+
 return [
 
     /*
@@ -8,7 +62,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | Static reference config sourced from Google Gemini API documentation.
-    | Not wired into runtime yet — verify values before production billing logic.
+    | Structured for catalog lookup, cost estimation, and limit tracking.
     |
     | Sources:
     | - Pricing: https://ai.google.dev/gemini-api/docs/pricing
@@ -30,12 +84,33 @@ return [
             'rate_limits' => 'https://ai.google.dev/gemini-api/docs/rate-limits',
             'models' => 'https://ai.google.dev/gemini-api/docs/models',
         ],
+        'pricing_schema' => [
+            'version' => 1,
+            'components' => ['input', 'output', 'context_caching.read', 'context_caching.storage'],
+            'pricing_modes' => ['standard', 'batch', 'flex', 'priority'],
+            'modalities' => ['text', 'image', 'video', 'audio'],
+            'rule_dimensions' => ['modality', 'context_tokens_lte', 'context_tokens_gt'],
+            'flat_price_key' => 'price_usd',
+            'rules_key' => 'rules',
+        ],
+        'rate_limit_metrics' => [
+            'rpm' => ['period' => 'minute', 'label' => 'Requests per minute', 'unit' => 'requests'],
+            'tpm' => ['period' => 'minute', 'label' => 'Tokens per minute', 'unit' => 'tokens'],
+            'rpd' => ['period' => 'day', 'label' => 'Requests per day', 'unit' => 'requests'],
+        ],
+        'batch_limit_metric' => [
+            'key' => 'batch_enqueued_tokens',
+            'label' => 'Batch enqueued tokens',
+            'unit' => 'tokens',
+        ],
         'notes' => [
             'Free-tier pricing and limits are intentionally excluded.',
             'Deprecated and shut-down models are excluded.',
             'RPM/TPM/RPD values are reference defaults for paid usage tiers (tier_1–tier_3). Google does not publish guaranteed interactive limits; verify active quotas in Google AI Studio.',
             'Output prices include thinking tokens unless noted otherwise.',
             'Document (PDF) input tokens are billed at image token rates.',
+            'Models with variant_of inherit listed keys from the parent unless overridden.',
+            'Grounding references grounding_templates by key.',
         ],
     ],
 
@@ -57,6 +132,39 @@ return [
         ],
     ],
 
+    'grounding_templates' => [
+        'gemini_3' => [
+            'google_search' => [
+                'free_quota' => ['amount' => 5000, 'period' => 'month', 'pool' => 'gemini_3'],
+                'overage_per_1k_queries_usd' => 14.00,
+            ],
+            'google_maps' => [
+                'free_quota' => ['amount' => 5000, 'period' => 'month', 'pool' => 'gemini_3'],
+                'overage_per_1k_queries_usd' => 14.00,
+            ],
+        ],
+        'gemini_2_5_pro' => [
+            'google_search' => [
+                'free_quota' => ['amount' => 1500, 'period' => 'day'],
+                'overage_per_1k_grounded_prompts_usd' => 35.00,
+            ],
+            'google_maps' => [
+                'free_quota' => ['amount' => 10000, 'period' => 'day'],
+                'overage_per_1k_grounded_prompts_usd' => 25.00,
+            ],
+        ],
+        'gemini_2_5_flash' => [
+            'google_search' => [
+                'free_quota' => ['amount' => 1500, 'period' => 'day', 'pool' => 'gemini_2_5_flash'],
+                'overage_per_1k_grounded_prompts_usd' => 35.00,
+            ],
+            'google_maps' => [
+                'free_quota' => ['amount' => 1500, 'period' => 'day'],
+                'overage_per_1k_grounded_prompts_usd' => 25.00,
+            ],
+        ],
+    ],
+
     'models' => [
 
         'gemini-3.5-flash' => [
@@ -71,48 +179,27 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['text' => 1.50, 'image' => 1.50, 'video' => 1.50, 'audio' => 1.50],
-                    'output' => 9.00,
-                    'context_caching' => [
-                        'read' => 0.15,
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flatPrice(1.50),
+                    'output' => $flatPrice(9.00),
+                    'context_caching' => $contextCaching(0.15, 1.00),
                 ],
                 'batch' => [
-                    'input' => 0.75,
-                    'output' => 4.50,
-                    'context_caching' => [
-                        'read' => 0.075,
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flatPrice(0.75),
+                    'output' => $flatPrice(4.50),
+                    'context_caching' => $contextCaching(0.075, 1.00),
                 ],
                 'flex' => [
-                    'input' => 0.75,
-                    'output' => 4.50,
-                    'context_caching' => [
-                        'read' => 0.08,
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flatPrice(0.75),
+                    'output' => $flatPrice(4.50),
+                    'context_caching' => $contextCaching(0.08, 1.00),
                 ],
                 'priority' => [
-                    'input' => 2.70,
-                    'output' => 16.20,
-                    'context_caching' => [
-                        'read' => 0.27,
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flatPrice(2.70),
+                    'output' => $flatPrice(16.20),
+                    'context_caching' => $contextCaching(0.27, 1.00),
                 ],
             ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-            ],
+            'grounding' => 'gemini_3',
             'rate_limits' => [
                 'tier_1' => ['rpm' => 300, 'tpm' => 1_000_000, 'rpd' => 1_500],
                 'tier_2' => ['rpm' => 1_000, 'tpm' => 4_000_000, 'rpd' => 10_000],
@@ -137,48 +224,39 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['text' => 0.25, 'image' => 0.25, 'video' => 0.25, 'audio' => 0.50],
-                    'output' => 1.50,
-                    'context_caching' => [
-                        'read' => ['text' => 0.025, 'image' => 0.025, 'video' => 0.025, 'audio' => 0.05],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.25, 0.50),
+                    'output' => $flatPrice(1.50),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.025, 'image' => 0.025, 'video' => 0.025, 'audio' => 0.05],
+                        1.00,
+                    ),
                 ],
                 'batch' => [
-                    'input' => ['text' => 0.125, 'image' => 0.125, 'video' => 0.125, 'audio' => 0.25],
-                    'output' => 0.75,
-                    'context_caching' => [
-                        'read' => ['text' => 0.0125, 'image' => 0.0125, 'video' => 0.0125, 'audio' => 0.025],
-                        'storage_per_hour_per_1m_tokens' => 0.50,
-                    ],
+                    'input' => $flashLiteModalityInput(0.125, 0.25),
+                    'output' => $flatPrice(0.75),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.0125, 'image' => 0.0125, 'video' => 0.0125, 'audio' => 0.025],
+                        0.50,
+                    ),
                 ],
                 'flex' => [
-                    'input' => ['text' => 0.125, 'image' => 0.125, 'video' => 0.125, 'audio' => 0.25],
-                    'output' => 0.75,
-                    'context_caching' => [
-                        'read' => ['text' => 0.0125, 'image' => 0.0125, 'video' => 0.0125, 'audio' => 0.025],
-                        'storage_per_hour_per_1m_tokens' => 0.50,
-                    ],
+                    'input' => $flashLiteModalityInput(0.125, 0.25),
+                    'output' => $flatPrice(0.75),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.0125, 'image' => 0.0125, 'video' => 0.0125, 'audio' => 0.025],
+                        0.50,
+                    ),
                 ],
                 'priority' => [
-                    'input' => ['text' => 0.45, 'image' => 0.45, 'video' => 0.45, 'audio' => 0.90],
-                    'output' => 2.70,
-                    'context_caching' => [
-                        'read' => ['text' => 0.045, 'image' => 0.045, 'video' => 0.045, 'audio' => 0.09],
-                        'storage_per_hour_per_1m_tokens' => 1.80,
-                    ],
+                    'input' => $flashLiteModalityInput(0.45, 0.90),
+                    'output' => $flatPrice(2.70),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.045, 'image' => 0.045, 'video' => 0.045, 'audio' => 0.09],
+                        1.80,
+                    ),
                 ],
             ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-            ],
+            'grounding' => 'gemini_3',
             'rate_limits' => [
                 'tier_1' => ['rpm' => 300, 'tpm' => 2_000_000, 'rpd' => 1_500],
                 'tier_2' => ['rpm' => 1_000, 'tpm' => 4_000_000, 'rpd' => 10_000],
@@ -204,48 +282,39 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['lte_200k' => 2.00, 'gt_200k' => 4.00],
-                    'output' => ['lte_200k' => 12.00, 'gt_200k' => 18.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.20, 'gt_200k' => 0.40],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
+                    'input' => $contextThresholdPrice(2.00, 4.00),
+                    'output' => $contextThresholdPrice(12.00, 18.00),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.20, 'gt_200k' => 0.40],
+                        4.50,
+                    ),
                 ],
                 'batch' => [
-                    'input' => ['lte_200k' => 1.00, 'gt_200k' => 2.00],
-                    'output' => ['lte_200k' => 6.00, 'gt_200k' => 9.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.20, 'gt_200k' => 0.40],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
+                    'input' => $contextThresholdPrice(1.00, 2.00),
+                    'output' => $contextThresholdPrice(6.00, 9.00),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.20, 'gt_200k' => 0.40],
+                        4.50,
+                    ),
                 ],
                 'flex' => [
-                    'input' => ['lte_200k' => 1.00, 'gt_200k' => 2.00],
-                    'output' => ['lte_200k' => 6.00, 'gt_200k' => 9.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.20, 'gt_200k' => 0.40],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
+                    'input' => $contextThresholdPrice(1.00, 2.00),
+                    'output' => $contextThresholdPrice(6.00, 9.00),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.20, 'gt_200k' => 0.40],
+                        4.50,
+                    ),
                 ],
                 'priority' => [
-                    'input' => ['lte_200k' => 3.60, 'gt_200k' => 7.20],
-                    'output' => ['lte_200k' => 21.60, 'gt_200k' => 32.40],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.36, 'gt_200k' => 0.72],
-                        'storage_per_hour_per_1m_tokens' => 8.10,
-                    ],
+                    'input' => $contextThresholdPrice(3.60, 7.20),
+                    'output' => $contextThresholdPrice(21.60, 32.40),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.36, 'gt_200k' => 0.72],
+                        8.10,
+                    ),
                 ],
             ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-            ],
+            'grounding' => 'gemini_3',
             'rate_limits' => [
                 'tier_1' => ['rpm' => 150, 'tpm' => 1_000_000, 'rpd' => 1_000],
                 'tier_2' => ['rpm' => 1_000, 'tpm' => 2_000_000, 'rpd' => 10_000],
@@ -264,66 +333,14 @@ return [
             'family' => '3.1',
             'status' => 'preview',
             'variant_of' => 'gemini-3.1-pro-preview',
+            'inherits' => [
+                'token_limits',
+                'pricing',
+                'grounding',
+                'rate_limits',
+                'batch_enqueued_tokens',
+            ],
             'description' => 'Same pricing and limits as Gemini 3.1 Pro Preview; optimized for custom tool + bash agentic workflows.',
-            'token_limits' => [
-                'context_window' => 1_048_576,
-                'max_output_tokens' => 65_536,
-                'pricing_context_threshold' => 200_000,
-            ],
-            'pricing' => [
-                'standard' => [
-                    'input' => ['lte_200k' => 2.00, 'gt_200k' => 4.00],
-                    'output' => ['lte_200k' => 12.00, 'gt_200k' => 18.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.20, 'gt_200k' => 0.40],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
-                ],
-                'batch' => [
-                    'input' => ['lte_200k' => 1.00, 'gt_200k' => 2.00],
-                    'output' => ['lte_200k' => 6.00, 'gt_200k' => 9.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.20, 'gt_200k' => 0.40],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
-                ],
-                'flex' => [
-                    'input' => ['lte_200k' => 1.00, 'gt_200k' => 2.00],
-                    'output' => ['lte_200k' => 6.00, 'gt_200k' => 9.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.20, 'gt_200k' => 0.40],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
-                ],
-                'priority' => [
-                    'input' => ['lte_200k' => 3.60, 'gt_200k' => 7.20],
-                    'output' => ['lte_200k' => 21.60, 'gt_200k' => 32.40],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.36, 'gt_200k' => 0.72],
-                        'storage_per_hour_per_1m_tokens' => 8.10,
-                    ],
-                ],
-            ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-            ],
-            'rate_limits' => [
-                'tier_1' => ['rpm' => 150, 'tpm' => 1_000_000, 'rpd' => 1_000],
-                'tier_2' => ['rpm' => 1_000, 'tpm' => 2_000_000, 'rpd' => 10_000],
-                'tier_3' => ['rpm' => 4_000, 'tpm' => 4_000_000, 'rpd' => null],
-            ],
-            'batch_enqueued_tokens' => [
-                'tier_1' => 5_000_000,
-                'tier_2' => 500_000_000,
-                'tier_3' => 1_000_000_000,
-            ],
         ],
 
         'gemini-3-flash-preview' => [
@@ -338,48 +355,39 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['text' => 0.50, 'image' => 0.50, 'video' => 0.50, 'audio' => 1.00],
-                    'output' => 3.00,
-                    'context_caching' => [
-                        'read' => ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.10],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.50, 1.00),
+                    'output' => $flatPrice(3.00),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.10],
+                        1.00,
+                    ),
                 ],
                 'batch' => [
-                    'input' => ['text' => 0.25, 'image' => 0.25, 'video' => 0.25, 'audio' => 0.50],
-                    'output' => 1.50,
-                    'context_caching' => [
-                        'read' => ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.10],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.25, 0.50),
+                    'output' => $flatPrice(1.50),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.10],
+                        1.00,
+                    ),
                 ],
                 'flex' => [
-                    'input' => ['text' => 0.25, 'image' => 0.25, 'video' => 0.25, 'audio' => 0.50],
-                    'output' => 1.50,
-                    'context_caching' => [
-                        'read' => ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.10],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.25, 0.50),
+                    'output' => $flatPrice(1.50),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.10],
+                        1.00,
+                    ),
                 ],
                 'priority' => [
-                    'input' => ['text' => 0.90, 'image' => 0.90, 'video' => 0.90, 'audio' => 1.80],
-                    'output' => 5.40,
-                    'context_caching' => [
-                        'read' => ['text' => 0.09, 'image' => 0.09, 'video' => 0.09, 'audio' => 0.18],
-                        'storage_per_hour_per_1m_tokens' => 1.80,
-                    ],
+                    'input' => $flashLiteModalityInput(0.90, 1.80),
+                    'output' => $flatPrice(5.40),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.09, 'image' => 0.09, 'video' => 0.09, 'audio' => 0.18],
+                        1.80,
+                    ),
                 ],
             ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 5000, 'period' => 'month', 'shared_with' => 'gemini_3'],
-                    'overage_per_1k_queries_usd' => 14.00,
-                ],
-            ],
+            'grounding' => 'gemini_3',
             'rate_limits' => [
                 'tier_1' => ['rpm' => 300, 'tpm' => 1_000_000, 'rpd' => 1_500],
                 'tier_2' => ['rpm' => 1_000, 'tpm' => 4_000_000, 'rpd' => 10_000],
@@ -401,48 +409,39 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['lte_200k' => 1.25, 'gt_200k' => 2.50],
-                    'output' => ['lte_200k' => 10.00, 'gt_200k' => 15.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.125, 'gt_200k' => 0.25],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
+                    'input' => $contextThresholdPrice(1.25, 2.50),
+                    'output' => $contextThresholdPrice(10.00, 15.00),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.125, 'gt_200k' => 0.25],
+                        4.50,
+                    ),
                 ],
                 'batch' => [
-                    'input' => ['lte_200k' => 0.625, 'gt_200k' => 1.25],
-                    'output' => ['lte_200k' => 5.00, 'gt_200k' => 7.50],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.125, 'gt_200k' => 0.25],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
+                    'input' => $contextThresholdPrice(0.625, 1.25),
+                    'output' => $contextThresholdPrice(5.00, 7.50),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.125, 'gt_200k' => 0.25],
+                        4.50,
+                    ),
                 ],
                 'flex' => [
-                    'input' => ['lte_200k' => 0.625, 'gt_200k' => 1.25],
-                    'output' => ['lte_200k' => 5.00, 'gt_200k' => 7.50],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.125, 'gt_200k' => 0.25],
-                        'storage_per_hour_per_1m_tokens' => 4.50,
-                    ],
+                    'input' => $contextThresholdPrice(0.625, 1.25),
+                    'output' => $contextThresholdPrice(5.00, 7.50),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.125, 'gt_200k' => 0.25],
+                        4.50,
+                    ),
                 ],
                 'priority' => [
-                    'input' => ['lte_200k' => 2.25, 'gt_200k' => 4.50],
-                    'output' => ['lte_200k' => 18.00, 'gt_200k' => 27.00],
-                    'context_caching' => [
-                        'read' => ['lte_200k' => 0.225, 'gt_200k' => 0.45],
-                        'storage_per_hour_per_1m_tokens' => 8.10,
-                    ],
+                    'input' => $contextThresholdPrice(2.25, 4.50),
+                    'output' => $contextThresholdPrice(18.00, 27.00),
+                    'context_caching' => $contextCaching(
+                        ['lte_200k' => 0.225, 'gt_200k' => 0.45],
+                        8.10,
+                    ),
                 ],
             ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 1500, 'period' => 'day'],
-                    'overage_per_1k_grounded_prompts_usd' => 35.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 10000, 'period' => 'day'],
-                    'overage_per_1k_grounded_prompts_usd' => 25.00,
-                ],
-            ],
+            'grounding' => 'gemini_2_5_pro',
             'rate_limits' => [
                 'tier_1' => ['rpm' => 150, 'tpm' => 1_000_000, 'rpd' => 1_000],
                 'tier_2' => ['rpm' => 1_000, 'tpm' => 2_000_000, 'rpd' => 10_000],
@@ -467,48 +466,39 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['text' => 0.30, 'image' => 0.30, 'video' => 0.30, 'audio' => 1.00],
-                    'output' => 2.50,
-                    'context_caching' => [
-                        'read' => ['text' => 0.03, 'image' => 0.03, 'video' => 0.03, 'audio' => 0.10],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.30, 1.00),
+                    'output' => $flatPrice(2.50),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.03, 'image' => 0.03, 'video' => 0.03, 'audio' => 0.10],
+                        1.00,
+                    ),
                 ],
                 'batch' => [
-                    'input' => ['text' => 0.15, 'image' => 0.15, 'video' => 0.15, 'audio' => 0.50],
-                    'output' => 1.25,
-                    'context_caching' => [
-                        'read' => ['text' => 0.03, 'image' => 0.03, 'video' => 0.03, 'audio' => 0.10],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.15, 0.50),
+                    'output' => $flatPrice(1.25),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.03, 'image' => 0.03, 'video' => 0.03, 'audio' => 0.10],
+                        1.00,
+                    ),
                 ],
                 'flex' => [
-                    'input' => ['text' => 0.15, 'image' => 0.15, 'video' => 0.15, 'audio' => 0.50],
-                    'output' => 1.25,
-                    'context_caching' => [
-                        'read' => ['text' => 0.03, 'image' => 0.03, 'video' => 0.03, 'audio' => 0.10],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.15, 0.50),
+                    'output' => $flatPrice(1.25),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.03, 'image' => 0.03, 'video' => 0.03, 'audio' => 0.10],
+                        1.00,
+                    ),
                 ],
                 'priority' => [
-                    'input' => ['text' => 0.54, 'image' => 0.54, 'video' => 0.54, 'audio' => 1.80],
-                    'output' => 4.50,
-                    'context_caching' => [
-                        'read' => ['text' => 0.054, 'image' => 0.054, 'video' => 0.054, 'audio' => 0.18],
-                        'storage_per_hour_per_1m_tokens' => 1.80,
-                    ],
+                    'input' => $flashLiteModalityInput(0.54, 1.80),
+                    'output' => $flatPrice(4.50),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.054, 'image' => 0.054, 'video' => 0.054, 'audio' => 0.18],
+                        1.80,
+                    ),
                 ],
             ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 1500, 'period' => 'day', 'shared_with' => 'gemini_2.5_flash_lite'],
-                    'overage_per_1k_grounded_prompts_usd' => 35.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 1500, 'period' => 'day'],
-                    'overage_per_1k_grounded_prompts_usd' => 25.00,
-                ],
-            ],
+            'grounding' => 'gemini_2_5_flash',
             'rate_limits' => [
                 'tier_1' => ['rpm' => 300, 'tpm' => 2_000_000, 'rpd' => 1_500],
                 'tier_2' => ['rpm' => 1_000, 'tpm' => 4_000_000, 'rpd' => 10_000],
@@ -533,48 +523,39 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['text' => 0.10, 'image' => 0.10, 'video' => 0.10, 'audio' => 0.30],
-                    'output' => 0.40,
-                    'context_caching' => [
-                        'read' => ['text' => 0.01, 'image' => 0.01, 'video' => 0.01, 'audio' => 0.03],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.10, 0.30),
+                    'output' => $flatPrice(0.40),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.01, 'image' => 0.01, 'video' => 0.01, 'audio' => 0.03],
+                        1.00,
+                    ),
                 ],
                 'batch' => [
-                    'input' => ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.15],
-                    'output' => 0.20,
-                    'context_caching' => [
-                        'read' => ['text' => 0.01, 'image' => 0.01, 'video' => 0.01, 'audio' => 0.03],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.05, 0.15),
+                    'output' => $flatPrice(0.20),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.01, 'image' => 0.01, 'video' => 0.01, 'audio' => 0.03],
+                        1.00,
+                    ),
                 ],
                 'flex' => [
-                    'input' => ['text' => 0.05, 'image' => 0.05, 'video' => 0.05, 'audio' => 0.15],
-                    'output' => 0.20,
-                    'context_caching' => [
-                        'read' => ['text' => 0.01, 'image' => 0.01, 'video' => 0.01, 'audio' => 0.03],
-                        'storage_per_hour_per_1m_tokens' => 1.00,
-                    ],
+                    'input' => $flashLiteModalityInput(0.05, 0.15),
+                    'output' => $flatPrice(0.20),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.01, 'image' => 0.01, 'video' => 0.01, 'audio' => 0.03],
+                        1.00,
+                    ),
                 ],
                 'priority' => [
-                    'input' => ['text' => 0.18, 'image' => 0.18, 'video' => 0.18, 'audio' => 0.54],
-                    'output' => 0.72,
-                    'context_caching' => [
-                        'read' => ['text' => 0.018, 'image' => 0.018, 'video' => 0.018, 'audio' => 0.054],
-                        'storage_per_hour_per_1m_tokens' => 1.80,
-                    ],
+                    'input' => $flashLiteModalityInput(0.18, 0.54),
+                    'output' => $flatPrice(0.72),
+                    'context_caching' => $contextCaching(
+                        ['text' => 0.018, 'image' => 0.018, 'video' => 0.018, 'audio' => 0.054],
+                        1.80,
+                    ),
                 ],
             ],
-            'grounding' => [
-                'google_search' => [
-                    'free_quota' => ['amount' => 1500, 'period' => 'day', 'shared_with' => 'gemini_2.5_flash'],
-                    'overage_per_1k_grounded_prompts_usd' => 35.00,
-                ],
-                'google_maps' => [
-                    'free_quota' => ['amount' => 1500, 'period' => 'day'],
-                    'overage_per_1k_grounded_prompts_usd' => 25.00,
-                ],
-            ],
+            'grounding' => 'gemini_2_5_flash',
             'rate_limits' => [
                 'tier_1' => ['rpm' => 300, 'tpm' => 2_000_000, 'rpd' => 1_500],
                 'tier_2' => ['rpm' => 1_000, 'tpm' => 4_000_000, 'rpd' => 10_000],
@@ -600,8 +581,8 @@ return [
             ],
             'pricing' => [
                 'standard' => [
-                    'input' => ['lte_200k' => 1.25, 'gt_200k' => 2.50],
-                    'output' => ['lte_200k' => 10.00, 'gt_200k' => 15.00],
+                    'input' => $contextThresholdPrice(1.25, 2.50),
+                    'output' => $contextThresholdPrice(10.00, 15.00),
                     'context_caching' => null,
                 ],
             ],
