@@ -601,9 +601,9 @@ watch(() => props.agentId, loadSchedules);
                         <div class="flex items-center gap-2 pr-2">
                             <Switch
                                 :id="`schedule-enabled-${schedule.uuid}`"
-                                :checked="schedule.enabled"
+                                :model-value="schedule.enabled"
                                 :disabled="toggleLoadingUuid === schedule.uuid"
-                                @update:checked="(value) => toggleEnabled(schedule, value)"
+                                @update:model-value="(value) => toggleEnabled(schedule, !!value)"
                             />
                             <Label :for="`schedule-enabled-${schedule.uuid}`" class="text-sm">
                                 Enabled
@@ -667,7 +667,7 @@ watch(() => props.agentId, loadSchedules);
                 </div>
 
                 <div class="flex items-center gap-2">
-                    <Switch id="schedule-enabled" v-model:checked="form.enabled" />
+                    <Switch id="schedule-enabled" v-model="form.enabled" />
                     <Label for="schedule-enabled">Enabled</Label>
                 </div>
 
@@ -706,8 +706,8 @@ watch(() => props.agentId, loadSchedules);
                             class="flex items-center gap-2 text-sm"
                         >
                             <Checkbox
-                                :checked="isDayChecked(day.value)"
-                                @update:checked="(checked) => toggleDay(day.value, checked)"
+                                :model-value="isDayChecked(day.value)"
+                                @update:model-value="(checked) => toggleDay(day.value, !!checked)"
                             />
                             {{ day.label }}
                         </label>
