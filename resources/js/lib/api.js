@@ -456,3 +456,37 @@ export function deleteAgentChannelTelegramWebhook(uuid) {
         method: 'DELETE',
     });
 }
+
+export function listAgentSchedules(agentId) {
+    return apiFetch(`/api/agents/${agentId}/schedules`);
+}
+
+export function getAgentSchedule(uuid) {
+    return apiFetch(`/api/agent-schedules/${encodeURIComponent(uuid)}`);
+}
+
+export function createAgentSchedule(agentId, payload) {
+    return apiFetch(`/api/agents/${agentId}/schedules`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function updateAgentSchedule(uuid, payload) {
+    return apiFetch(`/api/agent-schedules/${encodeURIComponent(uuid)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function deleteAgentSchedule(uuid) {
+    return apiFetch(`/api/agent-schedules/${encodeURIComponent(uuid)}`, {
+        method: 'DELETE',
+    });
+}
+
+export function runAgentScheduleNow(uuid) {
+    return apiFetch(`/api/agent-schedules/${encodeURIComponent(uuid)}/run-now`, {
+        method: 'POST',
+    });
+}

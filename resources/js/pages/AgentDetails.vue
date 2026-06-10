@@ -61,6 +61,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { getAgent, listAgents, listAiProviders, updateAgent } from '@/lib/api';
 import AgentChannelsEditor from '@/features/agents/AgentChannelsEditor.vue';
+import AgentSchedulesEditor from '@/features/agents/AgentSchedulesEditor.vue';
 import AgentStateProcessorsEditor from '@/features/agents/AgentStateProcessorsEditor.vue';
 import AgentToolsEditor from '@/features/agents/AgentToolsEditor.vue';
 import GenerateAgentPromptDialog from '@/features/agents/GenerateAgentPromptDialog.vue';
@@ -1003,6 +1004,11 @@ onMounted(fetchAgent);
                                 />
                             </CardContent>
                         </Card>
+
+                        <AgentSchedulesEditor
+                            :agent-id="agentId"
+                            :agent-active="!!agent?.is_active"
+                        />
 
                         <AgentChannelsEditor :agent-id="agentId" />
 
