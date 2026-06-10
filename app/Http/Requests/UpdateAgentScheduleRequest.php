@@ -35,6 +35,7 @@ class UpdateAgentScheduleRequest extends FormRequest
                     ->ignore($schedule->id),
             ],
             'enabled' => ['sometimes', 'boolean'],
+            'deliver_to_channel' => ['sometimes', 'boolean'],
             'timezone' => ['sometimes', 'string', 'timezone:all'],
             'schedule_type' => ['sometimes', 'string', Rule::in(['daily', 'weekly', 'interval', 'cron'])],
             'schedule_config' => ['sometimes', 'array'],

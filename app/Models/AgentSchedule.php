@@ -15,6 +15,7 @@ class AgentSchedule extends Model
         'agent_id',
         'name',
         'enabled',
+        'deliver_to_channel',
         'timezone',
         'schedule_type',
         'schedule_config',
@@ -44,6 +45,7 @@ class AgentSchedule extends Model
     {
         return [
             'enabled' => 'boolean',
+            'deliver_to_channel' => 'boolean',
             'schedule_config' => 'array',
             'metadata' => 'array',
             'last_run_at' => 'datetime',

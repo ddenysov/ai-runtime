@@ -98,6 +98,7 @@ const loadingContexts = ref(false);
 const form = ref({
     name: '',
     enabled: true,
+    deliver_to_channel: false,
     schedule_type: 'daily',
     time: '09:00',
     days_of_week: [1, 2, 3, 4, 5],
@@ -116,6 +117,7 @@ function resetForm() {
     form.value = {
         name: '',
         enabled: true,
+        deliver_to_channel: false,
         schedule_type: 'daily',
         time: '09:00',
         days_of_week: [1, 2, 3, 4, 5],
@@ -245,6 +247,7 @@ function applyScheduleToForm(schedule) {
     form.value = {
         name: schedule?.name ?? '',
         enabled: !!schedule?.enabled,
+        deliver_to_channel: !!schedule?.deliver_to_channel,
         schedule_type: type,
         time: config.time ?? '09:00',
         days_of_week: Array.isArray(config.days_of_week) && config.days_of_week.length
@@ -396,6 +399,7 @@ async function submitForm() {
         const body = {
             name,
             enabled: !!form.value.enabled,
+            deliver_to_channel: !!form.value.deliver_to_channel,
             schedule_type: form.value.schedule_type,
             schedule_config: buildScheduleConfig(),
             timezone: form.value.timezone,
@@ -562,6 +566,9 @@ watch(() => props.agentId, loadSchedules);
                             <Badge :variant="schedule.enabled ? 'secondary' : 'outline'">
                                 {{ schedule.enabled ? 'Enabled' : 'Disabled' }}
                             </Badge>
+                            <Badge v-if="schedule.deliver_to_channel" variant="outline">
+                                Channel delivery
+                            </Badge>
                             <Badge
                                 :variant="lastRunBadge(schedule).variant"
                                 :class="lastRunBadge(schedule).class"
@@ -669,6 +676,16 @@ watch(() => props.agentId, loadSchedules);
                 <div class="flex items-center gap-2">
                     <Switch id="schedule-enabled" v-model="form.enabled" />
                     <Label for="schedule-enabled">Enabled</Label>
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                        <Switch id="schedule-deliver-channel" v-model="form.deliver_to_channel" />
+                        <Label for="schedule-deliver-channel">Deliver response to agent channel</Label>
+                    </div>
+                    <p class="app-muted-text text-xs">
+                        Uses the first enabled channel that supports outbound delivery and its earliest chat thread.
+                    </p>
                 </div>
 
                 <div class="space-y-2">

@@ -25,6 +25,7 @@ class AgentScheduleResource extends JsonResource
             'agent_id' => $this->agent_id,
             'name' => $this->name,
             'enabled' => $this->enabled,
+            'deliver_to_channel' => $this->deliver_to_channel,
             'timezone' => $this->timezone,
             'schedule_type' => $this->schedule_type,
             'schedule_config' => $this->schedule_config,

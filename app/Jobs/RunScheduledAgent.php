@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\A2A\SendMessageAction;
 use App\A2A\TaskPayloadFactory;
+use App\Channels\Services\AgentChannelDeliveryResolver;
 use App\Models\AgentSchedule;
 use App\Scheduling\AgentScheduleCalculator;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,6 +31,7 @@ class RunScheduledAgent implements ShouldQueue
         SendMessageAction $sendMessage,
         TaskPayloadFactory $payloads,
         AgentScheduleCalculator $calculator,
+        AgentChannelDeliveryResolver $channelDelivery,
     ): void {
         $schedule = AgentSchedule::query()
             ->with('agent')
@@ -55,18 +57,43 @@ class RunScheduledAgent implements ShouldQueue
 
         $runId = (string) Str::uuid();
         $contextId = $schedule->context_id ?: (string) Str::uuid();
+        $metadata = [
+            'agent_run_id' => $runId,
+            'contextId' => $contextId,
+            'source' => 'agent_schedule',
+            'agent_schedule_id' => $schedule->id,
+            'scheduled_for' => $this->scheduledFor,
+        ];
+
+        if ($schedule->deliver_to_channel) {
+            $destination = $channelDelivery->resolveForAgent($agent);
+
+            if ($destination === null) {
+                $schedule->update([
+                    'last_error' => 'No delivery destination found. Enable an agent channel and send at least one inbound message first.',
+                ]);
+
+                Log::warning('Scheduled agent run skipped: no channel delivery destination.', [
+                    'agent_schedule_id' => $schedule->id,
+                    'agent_slug' => $agent->slug,
+                ]);
+
+                return;
+            }
+
+            $metadata['delivery_channel'] = $destination->deliveryChannel;
+
+            if ($schedule->context_id === null && $destination->contextId !== null) {
+                $contextId = $destination->contextId;
+                $metadata['contextId'] = $contextId;
+            }
+        }
 
         try {
             $sendMessage->handle(
                 agentSlug: $agent->slug,
                 message: $payloads->userMessage($schedule->message),
-                metadata: [
-                    'agent_run_id' => $runId,
-                    'contextId' => $contextId,
-                    'source' => 'agent_schedule',
-                    'agent_schedule_id' => $schedule->id,
-                    'scheduled_for' => $this->scheduledFor,
-                ],
+                metadata: $metadata,
             );
 
             $updates = [

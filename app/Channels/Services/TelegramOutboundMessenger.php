@@ -190,6 +190,10 @@ final class TelegramOutboundMessenger
      */
     private function isSupersededSession(AgentChannel $channel, string $chatId, array $task): bool
     {
+        if (($task['metadata']['source'] ?? null) === 'agent_schedule') {
+            return false;
+        }
+
         $taskContextId = $task['contextId'] ?? null;
 
         if (! is_string($taskContextId) || $taskContextId === '') {

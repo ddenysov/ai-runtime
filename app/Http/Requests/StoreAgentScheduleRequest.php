@@ -33,6 +33,7 @@ class StoreAgentScheduleRequest extends FormRequest
                 Rule::unique('agent_schedules', 'name')->where('agent_id', $agent->id),
             ],
             'enabled' => ['sometimes', 'boolean'],
+            'deliver_to_channel' => ['sometimes', 'boolean'],
             'timezone' => ['sometimes', 'string', 'timezone:all'],
             'schedule_type' => ['required', 'string', Rule::in(['daily', 'weekly', 'interval', 'cron'])],
             'schedule_config' => ['required', 'array'],
