@@ -4,8 +4,8 @@ namespace App\Models;
 
 use App\Channels\Models\AgentChannel;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Agent extends Model
@@ -87,6 +87,11 @@ class Agent extends Model
     public function channels(): HasMany
     {
         return $this->hasMany(AgentChannel::class);
+    }
+
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(AgentSchedule::class);
     }
 
     public function versions(): HasMany

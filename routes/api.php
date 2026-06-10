@@ -8,9 +8,10 @@ use App\Channels\Http\Controllers\TelegramAgentWebhookController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AgentInstructionsGeneratorController;
+use App\Http\Controllers\AgentScheduleController;
 use App\Http\Controllers\AgentStateProcessorController;
-use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\AiProviderController;
+use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\SettingsController;
 use App\Mcp\Http\Controllers\McpServerController;
 use Illuminate\Support\Facades\Route;
@@ -44,6 +45,13 @@ Route::middleware('web')->group(function (): void {
         Route::post('/agents/{agent}/generate-instructions', [AgentInstructionsGeneratorController::class, 'store']);
         Route::put('/agents/{agent}', [AgentController::class, 'update']);
         Route::delete('/agents/{agent}', [AgentController::class, 'destroy']);
+
+        Route::get('/agents/{agent}/schedules', [AgentScheduleController::class, 'index']);
+        Route::post('/agents/{agent}/schedules', [AgentScheduleController::class, 'store']);
+        Route::get('/agent-schedules/{agentSchedule}', [AgentScheduleController::class, 'show']);
+        Route::patch('/agent-schedules/{agentSchedule}', [AgentScheduleController::class, 'update']);
+        Route::delete('/agent-schedules/{agentSchedule}', [AgentScheduleController::class, 'destroy']);
+        Route::post('/agent-schedules/{agentSchedule}/run-now', [AgentScheduleController::class, 'runNow']);
 
         Route::get('/agent-state-processors', [AgentStateProcessorController::class, 'index']);
         Route::post('/agent-state-processors', [AgentStateProcessorController::class, 'store']);
