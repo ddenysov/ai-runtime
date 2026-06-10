@@ -484,7 +484,7 @@ async function submit() {
                             <FieldLabel for="provider-active">Active</FieldLabel>
                             <Switch
                                 id="provider-active"
-                                v-model:checked="form.is_active"
+                                v-model="form.is_active"
                             />
                         </Field>
                     </FieldGroup>

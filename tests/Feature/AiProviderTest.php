@@ -170,6 +170,73 @@ class AiProviderTest extends TestCase
             ->assertJsonPath('message', 'Provider connection is valid.');
     }
 
+    public function test_can_test_ai_provider_connection_via_api_using_stored_credentials(): void
+    {
+        $provider = AiProvider::query()->create([
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+        ]);
+
+        $this->mock(AiProviderConnectionTester::class, function ($mock): void {
+            $mock
+                ->shouldReceive('assertProviderValid')
+                ->once()
+                ->with(
+                    Mockery::on(fn (AiProvider $testProvider): bool => $testProvider->credential('key') === 'gemini-secret-key'),
+                    'gemini-3.1-flash',
+                );
+        });
+
+        $response = $this->postJson('/api/ai-providers/test-connection', [
+            'type' => 'gemini',
+            'ai_provider_id' => $provider->id,
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('message', 'Provider connection is valid.');
+    }
+
+    public function test_can_test_ai_provider_connection_via_api_with_credential_override(): void
+    {
+        $provider = AiProvider::query()->create([
+            'slug' => 'work-gemini',
+            'name' => 'Work Gemini',
+            'type' => 'gemini',
+            'credentials' => [
+                'key' => 'gemini-secret-key',
+            ],
+        ]);
+
+        $this->mock(AiProviderConnectionTester::class, function ($mock): void {
+            $mock
+                ->shouldReceive('assertProviderValid')
+                ->once()
+                ->with(
+                    Mockery::on(fn (AiProvider $testProvider): bool => $testProvider->credential('key') === 'gemini-new-secret-key'),
+                    'gemini-3.1-flash',
+                );
+        });
+
+        $response = $this->postJson('/api/ai-providers/test-connection', [
+            'type' => 'gemini',
+            'ai_provider_id' => $provider->id,
+            'credentials' => [
+                'key' => 'gemini-new-secret-key',
+            ],
+            'model' => 'gemini-3.1-flash',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('message', 'Provider connection is valid.');
+    }
+
     public function test_test_ai_provider_connection_api_returns_validation_error_when_connection_fails(): void
     {
         $this->mock(AiProviderConnectionTester::class, function ($mock): void {

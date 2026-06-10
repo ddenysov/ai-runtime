@@ -155,12 +155,14 @@ async function testModel(index) {
     try {
         const payload = {
             type: form.type,
-            credentials: buildTestCredentials(),
+            ai_provider_id: Number(props.providerId),
             model: model.model.trim(),
         };
 
-        if (Object.keys(payload.credentials).length === 0) {
-            payload.ai_provider_id = Number(props.providerId);
+        const credentials = buildTestCredentials();
+
+        if (Object.keys(credentials).length > 0) {
+            payload.credentials = credentials;
         }
 
         await testAiProviderConnection(payload);
@@ -212,7 +214,7 @@ async function loadProvider() {
         form.type = provider.type ?? providerTypes[0]?.value ?? 'gemini';
         form.masked_credentials = provider.masked_credentials ?? {};
         form.credentials = { key: '' };
-        form.is_active = provider.is_active ?? true;
+        form.is_active = Boolean(provider.is_active ?? true);
         form.models = (provider.models ?? []).map((model) => ({
             id: model.id,
             model: model.model ?? '',
@@ -542,7 +544,7 @@ async function submit() {
                             <FieldLabel for="edit-provider-active">Active</FieldLabel>
                             <Switch
                                 id="edit-provider-active"
-                                v-model:checked="form.is_active"
+                                v-model="form.is_active"
                             />
                         </Field>
                     </FieldGroup>
