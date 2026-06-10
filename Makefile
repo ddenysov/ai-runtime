@@ -26,6 +26,7 @@ update: ## Pull latest code and restart containers
 	git pull
 	$(MAKE) down
 	$(MAKE) up
+    $(MAKE) npm-dev
 
 ps: ## Show container status
 	$(COMPOSE) ps
