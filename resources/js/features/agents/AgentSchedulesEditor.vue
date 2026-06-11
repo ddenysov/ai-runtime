@@ -141,16 +141,22 @@ function firstError(data) {
     return typeof first === 'string' ? first : data?.message ?? null;
 }
 
-function formatDate(value) {
+function formatDate(value, timezone) {
     if (!value) {
         return '—';
     }
 
     try {
-        return new Intl.DateTimeFormat(undefined, {
+        const options = {
             dateStyle: 'medium',
             timeStyle: 'short',
-        }).format(new Date(value));
+        };
+
+        if (timezone) {
+            options.timeZone = timezone;
+        }
+
+        return new Intl.DateTimeFormat(undefined, options).format(new Date(value));
     } catch {
         return value;
     }
@@ -581,7 +587,7 @@ watch(() => props.agentId, loadSchedules);
                     <div class="app-muted-text mt-3 grid gap-1 text-sm sm:grid-cols-2">
                         <p>
                             Next run:
-                            <span class="text-foreground">{{ formatDate(schedule.next_run_at) }}</span>
+                            <span class="text-foreground">{{ formatDate(schedule.next_run_at, schedule.timezone) }}</span>
                         </p>
                         <p>
                             Last run:
@@ -591,7 +597,7 @@ watch(() => props.agentId, loadSchedules);
                                 class="text-primary underline-offset-4 hover:underline"
                                 @click="openLastRun(schedule)"
                             >
-                                {{ formatDate(schedule.last_run_at) }}
+                                {{ formatDate(schedule.last_run_at, schedule.timezone) }}
                             </button>
                             <span v-else class="text-foreground">—</span>
                         </p>
