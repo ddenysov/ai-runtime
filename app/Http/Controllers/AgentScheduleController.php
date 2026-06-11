@@ -40,7 +40,9 @@ class AgentScheduleController extends Controller
             'name' => (string) $validated['name'],
             'enabled' => (bool) ($validated['enabled'] ?? true),
             'deliver_to_channel' => (bool) ($validated['deliver_to_channel'] ?? false),
-            'timezone' => (string) ($validated['timezone'] ?? config('app.timezone')),
+            'timezone' => filled($validated['timezone'] ?? null)
+                ? (string) $validated['timezone']
+                : null,
             'schedule_type' => (string) $validated['schedule_type'],
             'schedule_config' => $validated['schedule_config'],
             'message' => (string) $validated['message'],
@@ -88,7 +90,9 @@ class AgentScheduleController extends Controller
         }
 
         if (array_key_exists('timezone', $validated)) {
-            $agentSchedule->timezone = (string) $validated['timezone'];
+            $agentSchedule->timezone = filled($validated['timezone'] ?? null)
+                ? (string) $validated['timezone']
+                : null;
             $scheduleFieldsChanged = true;
         }
 

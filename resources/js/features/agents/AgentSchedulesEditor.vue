@@ -67,10 +67,11 @@ const dayOptions = [
     { value: 0, label: 'Sun' },
 ];
 
+const defaultScheduleTimezone = '';
+
 const timezoneOptions = typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf === 'function'
-    ? Intl.supportedValuesOf('timeZone')
+    ? Intl.supportedValuesOf('timeZone').filter((tz) => tz !== 'UTC')
     : [
-        'UTC',
         'Europe/Kyiv',
         'Europe/London',
         'Europe/Berlin',
@@ -78,6 +79,10 @@ const timezoneOptions = typeof Intl !== 'undefined' && typeof Intl.supportedValu
         'America/Los_Angeles',
         'Asia/Tokyo',
     ];
+
+function scheduleTimezone(timezone) {
+    return timezone || 'UTC';
+}
 
 const schedules = ref([]);
 const listError = ref('');
@@ -105,7 +110,7 @@ const form = ref({
     day_of_week: 1,
     every_minutes: 60,
     cron_expression: '0 9 * * 1-5',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    timezone: defaultScheduleTimezone,
     message: '',
     context_mode: 'new',
     context_id: '',
@@ -124,7 +129,7 @@ function resetForm() {
         day_of_week: 1,
         every_minutes: 60,
         cron_expression: '0 9 * * 1-5',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        timezone: defaultScheduleTimezone,
         message: '',
         context_mode: 'new',
         context_id: '',
@@ -262,7 +267,7 @@ function applyScheduleToForm(schedule) {
         day_of_week: Number(config.day_of_week ?? 1),
         every_minutes: Number(config.every_minutes ?? 60),
         cron_expression: config.expression ?? schedule?.cron_expression ?? '0 9 * * 1-5',
-        timezone: schedule?.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+        timezone: schedule?.timezone ?? defaultScheduleTimezone,
         message: schedule?.message ?? '',
         context_mode: schedule?.context_id ? 'fixed' : 'new',
         context_id: schedule?.context_id ?? '',
@@ -408,7 +413,7 @@ async function submitForm() {
             deliver_to_channel: !!form.value.deliver_to_channel,
             schedule_type: form.value.schedule_type,
             schedule_config: buildScheduleConfig(),
-            timezone: form.value.timezone,
+            timezone: form.value.timezone || null,
             message,
             context_id: resolveContextId(),
         };
@@ -562,7 +567,7 @@ watch(() => props.agentId, loadSchedules);
                                 {{ formatScheduleSummary(schedule) }}
                             </p>
                             <p class="app-muted-text mt-1 text-xs">
-                                Timezone: {{ schedule.timezone }}
+                                Timezone: {{ scheduleTimezone(schedule.timezone) }}
                             </p>
                         </div>
                         <div class="flex shrink-0 flex-wrap items-center gap-1.5">
@@ -587,7 +592,7 @@ watch(() => props.agentId, loadSchedules);
                     <div class="app-muted-text mt-3 grid gap-1 text-sm sm:grid-cols-2">
                         <p>
                             Next run:
-                            <span class="text-foreground">{{ formatDate(schedule.next_run_at, schedule.timezone) }}</span>
+                            <span class="text-foreground">{{ formatDate(schedule.next_run_at, scheduleTimezone(schedule.timezone)) }}</span>
                         </p>
                         <p>
                             Last run:
@@ -597,7 +602,7 @@ watch(() => props.agentId, loadSchedules);
                                 class="text-primary underline-offset-4 hover:underline"
                                 @click="openLastRun(schedule)"
                             >
-                                {{ formatDate(schedule.last_run_at, schedule.timezone) }}
+                                {{ formatDate(schedule.last_run_at, scheduleTimezone(schedule.timezone)) }}
                             </button>
                             <span v-else class="text-foreground">—</span>
                         </p>
@@ -775,16 +780,20 @@ watch(() => props.agentId, loadSchedules);
                 </div>
 
                 <div class="space-y-2">
-                    <Label for="schedule-timezone">Timezone</Label>
+                    <Label for="schedule-timezone">Timezone (optional)</Label>
                     <select
                         id="schedule-timezone"
                         v-model="form.timezone"
                         class="flex h-10 w-full rounded-app-control border border-input bg-background px-3 py-2 text-sm"
                     >
+                        <option :value="defaultScheduleTimezone">UTC (default)</option>
                         <option v-for="tz in timezoneOptions" :key="tz" :value="tz">
                             {{ tz }}
                         </option>
                     </select>
+                    <p class="app-muted-text text-xs">
+                        Leave as UTC unless the schedule should run in a specific local timezone.
+                    </p>
                 </div>
 
                 <div class="space-y-2">

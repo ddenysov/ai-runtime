@@ -36,7 +36,7 @@ class UpdateAgentScheduleRequest extends FormRequest
             ],
             'enabled' => ['sometimes', 'boolean'],
             'deliver_to_channel' => ['sometimes', 'boolean'],
-            'timezone' => ['sometimes', 'string', 'timezone:all'],
+            'timezone' => ['sometimes', 'nullable', 'string', 'timezone:all'],
             'schedule_type' => ['sometimes', 'string', Rule::in(['daily', 'weekly', 'interval', 'cron'])],
             'schedule_config' => ['sometimes', 'array'],
             'message' => ['sometimes', 'string', 'max:20000'],

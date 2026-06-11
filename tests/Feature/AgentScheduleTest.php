@@ -16,6 +16,31 @@ class AgentScheduleTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_schedule_without_timezone_defaults_to_utc_for_next_run(): void
+    {
+        $agent = $this->createAgent();
+        $calculator = app(AgentScheduleCalculator::class);
+
+        $schedule = AgentSchedule::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'agent_id' => $agent->id,
+            'name' => 'UTC default',
+            'enabled' => true,
+            'timezone' => null,
+            'schedule_type' => 'daily',
+            'schedule_config' => [
+                'time' => '09:00',
+                'days_of_week' => [1, 2, 3, 4, 5],
+            ],
+            'message' => 'Check inbox',
+        ]);
+
+        $nextRunAt = $calculator->nextRunAt($schedule, now()->startOfDay());
+
+        $this->assertNotNull($nextRunAt);
+        $this->assertSame('09:00', $nextRunAt->copy()->timezone('UTC')->format('H:i'));
+    }
+
     public function test_switching_from_interval_to_daily_moves_next_run_into_the_future(): void
     {
         $agent = $this->createAgent();
