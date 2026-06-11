@@ -156,7 +156,11 @@
     }
 
     .app-sidebar {
-        @apply hidden border-r border-border/70 bg-sidebar px-4 py-5 backdrop-blur lg:block;
+        @apply border-r border-border/70 bg-sidebar px-4 py-5 backdrop-blur;
+    }
+
+    .app-sidebar-desktop {
+        @apply hidden lg:block;
     }
 
     .app-page-header {

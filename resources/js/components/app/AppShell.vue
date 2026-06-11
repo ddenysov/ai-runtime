@@ -1,5 +1,9 @@
 <script setup>
+import { watch } from 'vue';
+import { useRoute } from 'vue-router';
 import AppSidebar from '@/components/app/AppSidebar.vue';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { provideMobileSidebar } from '@/composables/useMobileSidebar';
 
 defineProps({
     workspaces: {
@@ -23,6 +27,13 @@ defineProps({
 const selectedWorkspace = defineModel('workspace', {
     type: String,
     required: true,
+});
+
+const route = useRoute();
+const { open: mobileMenuOpen, close: closeMobileMenu } = provideMobileSidebar();
+
+watch(() => route.fullPath, () => {
+    closeMobileMenu();
 });
 </script>
 
@@ -51,5 +62,21 @@ const selectedWorkspace = defineModel('workspace', {
                 <slot />
             </section>
         </div>
+
+        <Sheet :open="mobileMenuOpen" @update:open="mobileMenuOpen = $event">
+            <SheetContent
+                side="left"
+                class="w-[280px] gap-0 border-r border-border/70 bg-sidebar p-0 sm:max-w-[280px]"
+            >
+                <AppSidebar
+                    v-model:workspace="selectedWorkspace"
+                    mobile
+                    class="h-full overflow-y-auto"
+                    :workspaces="workspaces"
+                    :navigation="navigation"
+                    :promo="promo"
+                />
+            </SheetContent>
+        </Sheet>
     </main>
 </template>

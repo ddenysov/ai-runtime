@@ -11,6 +11,10 @@ import { logout as logoutRequest } from '@/lib/api';
 import { clearCurrentUser } from '@/lib/auth';
 
 defineProps({
+    mobile: {
+        type: Boolean,
+        default: false,
+    },
     workspaces: {
         type: Array,
         required: true,
@@ -55,7 +59,7 @@ async function signOut() {
 </script>
 
 <template>
-    <aside class="app-sidebar">
+    <aside class="app-sidebar" :class="{ 'app-sidebar-desktop': !mobile }">
         <AppLogo />
         <WorkspaceSwitcher v-model="selectedWorkspace" :workspaces="workspaces" />
         <SidebarNav :items="navigation" />
