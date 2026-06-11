@@ -25,6 +25,7 @@ class RunScheduledAgent implements ShouldQueue
         public int $agentScheduleId,
         public ?string $scheduledFor = null,
         public bool $recalculateNextRun = false,
+        public ?string $dispatchFingerprint = null,
     ) {}
 
     public function handle(
@@ -42,6 +43,16 @@ class RunScheduledAgent implements ShouldQueue
         }
 
         if (! $schedule->enabled) {
+            return;
+        }
+
+        if ($this->dispatchFingerprint !== null
+            && ! hash_equals($this->dispatchFingerprint, $schedule->dispatchFingerprint())) {
+            Log::info('Scheduled agent run skipped: schedule changed after dispatch.', [
+                'agent_schedule_id' => $schedule->id,
+                'scheduled_for' => $this->scheduledFor,
+            ]);
+
             return;
         }
 

@@ -38,6 +38,8 @@ class RunDueAgentSchedulesCommand extends Command
                     return;
                 }
 
+                $dispatchFingerprint = $schedule->dispatchFingerprint();
+
                 $nextRunAt = $calculator->nextRunAt(
                     $schedule,
                     $schedule->next_run_at?->copy()->addSecond(),
@@ -50,6 +52,7 @@ class RunDueAgentSchedulesCommand extends Command
                 RunScheduledAgent::dispatch(
                     agentScheduleId: $schedule->id,
                     scheduledFor: $scheduledFor,
+                    dispatchFingerprint: $dispatchFingerprint,
                 );
             });
 

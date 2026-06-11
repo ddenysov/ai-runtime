@@ -141,6 +141,7 @@ class AgentScheduleController extends Controller
             agentScheduleId: $agentSchedule->id,
             scheduledFor: $scheduledFor,
             recalculateNextRun: false,
+            dispatchFingerprint: $agentSchedule->dispatchFingerprint(),
         );
 
         return response()->json([

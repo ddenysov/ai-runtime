@@ -39,6 +39,23 @@ class AgentSchedule extends Model
     }
 
     /**
+     * Fingerprint of user-facing schedule fields. Used to skip queued runs
+     * that were dispatched before the schedule was edited.
+     */
+    public function dispatchFingerprint(): string
+    {
+        return hash('sha256', json_encode([
+            'enabled' => $this->enabled,
+            'deliver_to_channel' => $this->deliver_to_channel,
+            'schedule_type' => $this->schedule_type,
+            'schedule_config' => $this->schedule_config,
+            'timezone' => $this->timezone,
+            'message' => $this->message,
+            'context_id' => $this->context_id,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
