@@ -16,6 +16,8 @@ final class BuiltinRuntimeTools
         'state_delete',
         'state_list',
         'state_get',
+        'diary_write',
+        'diary_read',
     ];
 
     public static function isBuiltin(string $slug): bool

@@ -38,6 +38,13 @@ return [
             'report' => false,
         ],
 
+        'diary' => [
+            'driver' => 'local',
+            'root' => storage_path('diary'),
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

@@ -39,6 +39,16 @@ export const runtimeTools = [
         label: 'State: get',
         description: 'Get full details and content for a visible state entity by ID.',
     },
+    {
+        slug: 'diary_write',
+        label: 'Diary: write',
+        description: 'Append a diary entry for today. Date, file name, and timestamp are handled automatically.',
+    },
+    {
+        slug: 'diary_read',
+        label: 'Diary: read',
+        description: 'Read diary entries for today or a specific date in YYYY-MM-DD format.',
+    },
 ];
 
 export function findRuntimeTool(slug) {

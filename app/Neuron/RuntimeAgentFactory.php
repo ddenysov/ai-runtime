@@ -8,7 +8,10 @@ use App\Mcp\Services\McpStdioToolExecutor;
 use App\Neuron\Agents\ConfigurableRuntimeAgent;
 use App\Neuron\Persistence\LaravelWorkflowPersistence;
 use App\Neuron\Providers\RuntimeAiProviderFactory;
+use App\Neuron\Diary\DiaryService;
 use App\Neuron\State\AgentStateStore;
+use App\Neuron\Tools\DiaryReadTool;
+use App\Neuron\Tools\DiaryWriteTool;
 use App\Neuron\Tools\GetAgentCardTool;
 use App\Neuron\Tools\McpServerTool;
 use App\Neuron\Tools\RemoteA2AAgentTool;
@@ -75,6 +78,8 @@ class RuntimeAgentFactory
             $slug === 'state_delete' => new StateDeleteTool($context, app(AgentStateStore::class)),
             $slug === 'state_list' => new StateListTool($context, app(AgentStateStore::class)),
             $slug === 'state_get' => new StateGetTool($context, app(AgentStateStore::class)),
+            $slug === 'diary_write' => new DiaryWriteTool(app(DiaryService::class)),
+            $slug === 'diary_read' => new DiaryReadTool(app(DiaryService::class)),
             str_starts_with($slug, 'mcp:') => $this->makeMcpTool($slug, $config),
             default => throw new InvalidArgumentException("Unsupported runtime tool [{$slug}]."),
         };
