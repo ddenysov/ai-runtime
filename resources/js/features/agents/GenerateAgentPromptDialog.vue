@@ -73,7 +73,7 @@ function resetState() {
     draft.steps = listToLines(props.agent?.instructions?.steps);
     draft.output = listToLines(props.agent?.instructions?.output);
     error.value = '';
-    hasGenerated.value = false;
+    hasGenerated.value = linesToList(draft.background).length > 0;
     generating.value = false;
     saving.value = false;
 }
