@@ -5,6 +5,8 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
+$basePath = dirname(__DIR__);
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;
@@ -12,6 +14,10 @@ if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php'))
 
 // Register the Composer autoloader...
 require __DIR__.'/../vendor/autoload.php';
+
+require __DIR__.'/../bootstrap/gate.php';
+
+gateShouldBootstrapApplication($basePath, $_SERVER);
 
 // Bootstrap Laravel and handle the request...
 /** @var Application $app */

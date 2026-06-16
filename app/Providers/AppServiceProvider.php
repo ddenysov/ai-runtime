@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Channels\Services\AgentChannelDeliveryResolver;
 use App\Channels\Services\TelegramChannelDeliveryDestinationResolver;
+use App\Gate\GateConfigPublisher;
 use App\Neuron\Diary\Contracts\DiaryStorage;
 use App\Neuron\Diary\DiaryService;
 use App\Neuron\Diary\DiaryStorageManager;
@@ -19,6 +20,10 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(RuntimeAiProviderFactory::class, ConfiguredRuntimeAiProviderFactory::class);
+
+        $this->app->singleton(GateConfigPublisher::class, function (): GateConfigPublisher {
+            return new GateConfigPublisher((string) config('gate.storage_path'));
+        });
 
         $this->app->singleton(DiaryStorageManager::class);
 

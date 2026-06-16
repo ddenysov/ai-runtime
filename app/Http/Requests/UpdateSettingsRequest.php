@@ -19,6 +19,10 @@ class UpdateSettingsRequest extends FormRequest
         return [
             'prompts' => ['sometimes', 'array'],
             'prompts.prompt_generator_agent_id' => ['sometimes', 'nullable', 'integer', 'exists:agents,id'],
+            'gatekeeper' => ['sometimes', 'array'],
+            'gatekeeper.enabled' => ['sometimes', 'boolean'],
+            'gatekeeper.bot_token' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'gatekeeper.telegram_chat_id' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
 }

@@ -12,10 +12,12 @@ use App\Http\Controllers\AgentScheduleController;
 use App\Http\Controllers\AgentStateProcessorController;
 use App\Http\Controllers\AiProviderController;
 use App\Http\Controllers\Auth\SessionController;
+use App\Http\Controllers\Gatekeeper\GatekeeperTelegramWebhookController;
 use App\Http\Controllers\SettingsController;
 use App\Mcp\Http\Controllers\McpServerController;
 use Illuminate\Support\Facades\Route;
 
+Route::post('/integrations/gatekeeper/telegram/webhook', GatekeeperTelegramWebhookController::class);
 Route::post('/integrations/telegram/webhooks/{agentChannel}', TelegramAgentWebhookController::class);
 
 Route::middleware('web')->group(function (): void {

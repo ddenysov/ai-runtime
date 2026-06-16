@@ -1,6 +1,5 @@
 <script setup>
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { LogOutIcon } from '@lucide/vue';
 import AppLogo from '@/components/app/AppLogo.vue';
 import SidebarNav from '@/components/app/SidebarNav.vue';
@@ -38,7 +37,6 @@ const selectedWorkspace = defineModel('workspace', {
     required: true,
 });
 
-const router = useRouter();
 const signingOut = ref(false);
 
 async function signOut() {
@@ -53,7 +51,7 @@ async function signOut() {
     } finally {
         clearCurrentUser();
         signingOut.value = false;
-        await router.push({ name: 'login' });
+        window.location.assign('/');
     }
 }
 </script>

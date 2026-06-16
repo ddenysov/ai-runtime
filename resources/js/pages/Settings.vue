@@ -7,7 +7,9 @@ import PageBreadcrumbs from '@/components/app/PageBreadcrumbs.vue';
 import PageHeader from '@/components/app/PageHeader.vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
     Select,
     SelectContent,
@@ -30,6 +32,14 @@ const agentsLoading = ref(false);
 const agents = ref([]);
 const promptGeneratorAgentId = ref(NONE_AGENT);
 const savedPromptGeneratorAgentId = ref(NONE_AGENT);
+const gatekeeperEnabled = ref(false);
+const savedGatekeeperEnabled = ref(false);
+const gatekeeperBotToken = ref('');
+const gatekeeperTelegramChatId = ref('');
+const savedGatekeeperTelegramChatId = ref('');
+const gatekeeperBotTokenConfigured = ref(false);
+const gatekeeperWebhookUrl = ref('');
+const savingGatekeeper = ref(false);
 
 const settingsNavigation = computed(() => navigation.map((item) => ({
     ...item,
@@ -38,6 +48,12 @@ const settingsNavigation = computed(() => navigation.map((item) => ({
 
 const promptGeneratorDirty = computed(() => (
     promptGeneratorAgentId.value !== savedPromptGeneratorAgentId.value
+));
+
+const gatekeeperDirty = computed(() => (
+    gatekeeperEnabled.value !== savedGatekeeperEnabled.value
+    || gatekeeperTelegramChatId.value !== savedGatekeeperTelegramChatId.value
+    || gatekeeperBotToken.value !== ''
 ));
 
 function agentSelectValue(agentId) {
@@ -80,6 +96,16 @@ async function loadSettings() {
 
         promptGeneratorAgentId.value = selectValue;
         savedPromptGeneratorAgentId.value = selectValue;
+
+        const gatekeeper = response.data?.gatekeeper ?? {};
+
+        gatekeeperEnabled.value = Boolean(gatekeeper.enabled);
+        savedGatekeeperEnabled.value = gatekeeperEnabled.value;
+        gatekeeperTelegramChatId.value = gatekeeper.telegram_chat_id ?? '';
+        savedGatekeeperTelegramChatId.value = gatekeeperTelegramChatId.value;
+        gatekeeperBotTokenConfigured.value = Boolean(gatekeeper.bot_token_configured);
+        gatekeeperWebhookUrl.value = gatekeeper.webhook_url ?? '';
+        gatekeeperBotToken.value = '';
     } catch (fetchError) {
         toast.error('Could not load settings', {
             description: fetchError.message,
@@ -112,6 +138,42 @@ async function savePromptGenerator() {
         });
     } finally {
         saving.value = false;
+    }
+}
+
+async function saveGatekeeper() {
+    savingGatekeeper.value = true;
+
+    try {
+        const payload = {
+            gatekeeper: {
+                enabled: gatekeeperEnabled.value,
+                telegram_chat_id: gatekeeperTelegramChatId.value.trim() || null,
+            },
+        };
+
+        if (gatekeeperBotToken.value.trim() !== '') {
+            payload.gatekeeper.bot_token = gatekeeperBotToken.value.trim();
+        }
+
+        const response = await updateSettings(payload);
+        const gatekeeper = response.data?.gatekeeper ?? {};
+
+        gatekeeperEnabled.value = Boolean(gatekeeper.enabled);
+        savedGatekeeperEnabled.value = gatekeeperEnabled.value;
+        gatekeeperTelegramChatId.value = gatekeeper.telegram_chat_id ?? '';
+        savedGatekeeperTelegramChatId.value = gatekeeperTelegramChatId.value;
+        gatekeeperBotTokenConfigured.value = Boolean(gatekeeper.bot_token_configured);
+        gatekeeperWebhookUrl.value = gatekeeper.webhook_url ?? '';
+        gatekeeperBotToken.value = '';
+
+        toast.success('Gatekeeper settings saved');
+    } catch (saveError) {
+        toast.error('Could not save gatekeeper settings', {
+            description: saveError.data?.message ?? saveError.message,
+        });
+    } finally {
+        savingGatekeeper.value = false;
     }
 }
 
@@ -192,6 +254,98 @@ onMounted(async () => {
                             </Button>
                             <p
                                 v-if="promptGeneratorDirty"
+                                class="app-muted-text text-sm"
+                            >
+                                Unsaved changes
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+            </section>
+
+            <section class="space-y-4">
+                <div>
+                    <h2 class="text-lg font-semibold tracking-tight">
+                        Access gatekeeper
+                    </h2>
+                    <p class="app-muted-text mt-1 text-sm">
+                        Hide the app behind an nginx-like 404 until you open login from Telegram.
+                    </p>
+                </div>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Telegram gatekeeper</CardTitle>
+                        <CardDescription>
+                            Requires <code class="text-xs">GATE_ENABLED=true</code> in the server environment.
+                            Logged-in sessions keep working after the 2-minute window closes.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent class="space-y-5">
+                        <div class="flex max-w-xl items-center justify-between gap-4">
+                            <div class="space-y-1">
+                                <Label for="gatekeeper-enabled">Enabled</Label>
+                                <p class="app-muted-text text-sm">
+                                    Block visitors until you approve access from Telegram.
+                                </p>
+                            </div>
+                            <Switch
+                                id="gatekeeper-enabled"
+                                v-model="gatekeeperEnabled"
+                                :disabled="loading || savingGatekeeper"
+                            />
+                        </div>
+
+                        <div class="max-w-xl space-y-2">
+                            <Label for="gatekeeper-bot-token">Bot token</Label>
+                            <Input
+                                id="gatekeeper-bot-token"
+                                v-model="gatekeeperBotToken"
+                                autocomplete="off"
+                                :disabled="loading || savingGatekeeper"
+                                :placeholder="gatekeeperBotTokenConfigured ? 'Token saved — leave blank to keep' : '123456:ABC...'"
+                                type="password"
+                            />
+                        </div>
+
+                        <div class="max-w-xl space-y-2">
+                            <Label for="gatekeeper-chat-id">Your Telegram chat ID</Label>
+                            <Input
+                                id="gatekeeper-chat-id"
+                                v-model="gatekeeperTelegramChatId"
+                                autocomplete="off"
+                                :disabled="loading || savingGatekeeper"
+                                placeholder="123456789"
+                            />
+                        </div>
+
+                        <div
+                            v-if="gatekeeperWebhookUrl"
+                            class="max-w-xl space-y-2"
+                        >
+                            <Label>Webhook URL</Label>
+                            <p class="rounded-app-control border border-border bg-muted/30 px-3 py-2 font-mono text-xs break-all">
+                                {{ gatekeeperWebhookUrl }}
+                            </p>
+                            <p class="app-muted-text text-sm">
+                                Register this URL with Telegram Bot API after saving.
+                            </p>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <Button
+                                size="sm"
+                                :disabled="!gatekeeperDirty || savingGatekeeper || loading"
+                                @click="saveGatekeeper"
+                            >
+                                <LoaderCircleIcon
+                                    v-if="savingGatekeeper"
+                                    class="size-4 animate-spin"
+                                />
+                                Save
+                            </Button>
+                            <p
+                                v-if="gatekeeperDirty"
                                 class="app-muted-text text-sm"
                             >
                                 Unsaved changes

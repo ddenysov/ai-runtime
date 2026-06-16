@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Gate\GateAuthCookieResponse;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -53,10 +54,12 @@ class SessionController extends Controller
 
         $request->session()->regenerate();
 
-        return response()->json([
-            'data' => $this->serializeUser($request->user()),
-            'csrf_token' => csrf_token(),
-        ]);
+        return response()
+            ->json([
+                'data' => $this->serializeUser($request->user()),
+                'csrf_token' => csrf_token(),
+            ])
+            ->withCookie(GateAuthCookieResponse::makeCookie());
     }
 
     public function destroy(Request $request): JsonResponse
@@ -66,10 +69,13 @@ class SessionController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return response()->json([
-            'data' => ['ok' => true],
-            'csrf_token' => csrf_token(),
-        ]);
+        return response()
+            ->json([
+                'data' => ['ok' => true],
+                'csrf_token' => csrf_token(),
+            ])
+            ->withCookie(GateAuthCookieResponse::forgetCookie())
+            ->withoutCookie(config('session.cookie'));
     }
 
     /**
