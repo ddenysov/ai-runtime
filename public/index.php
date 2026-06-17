@@ -17,7 +17,22 @@ require __DIR__.'/../vendor/autoload.php';
 
 require __DIR__.'/../bootstrap/gate.php';
 
-gateShouldBootstrapApplication($basePath, $_SERVER);
+$post = $_POST;
+
+if ($post === [] && strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
+    $contentType = (string) ($_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '');
+
+    if (str_contains($contentType, 'application/json')) {
+        $raw = file_get_contents('php://input');
+        $decoded = json_decode($raw !== false ? $raw : '', true);
+
+        if (is_array($decoded)) {
+            $post = $decoded;
+        }
+    }
+}
+
+gateShouldBootstrapApplication($basePath, $_SERVER, $post);
 
 // Bootstrap Laravel and handle the request...
 /** @var Application $app */

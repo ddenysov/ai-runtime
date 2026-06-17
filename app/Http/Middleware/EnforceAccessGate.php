@@ -4,6 +4,8 @@ namespace App\Http\Middleware;
 
 use App\Gate\GateFrontDoor;
 use App\Gate\Nginx404Response;
+use App\Gate\GateRequestContext;
+use App\Gate\GateVisitAlertMessage;
 use App\Gate\TelegramGateClient;
 use Closure;
 use Illuminate\Http\Request;
@@ -59,12 +61,7 @@ final class EnforceAccessGate
         $client = new TelegramGateClient($config->botToken());
         $client->sendVisitAlert(
             $config->telegramChatId(),
-            implode("\n", [
-                'Site access attempt',
-                'Method: '.$request->getMethod(),
-                'Path: '.$request->path(),
-                'User-Agent: '.($request->userAgent() ?? 'unknown'),
-            ]),
+            GateVisitAlertMessage::fromContext(GateRequestContext::fromRequest($request)),
         );
         $state->markNotified();
     }

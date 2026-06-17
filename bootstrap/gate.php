@@ -5,8 +5,9 @@ use Dotenv\Dotenv;
 
 /**
  * @param  array<string, mixed>  $server
+ * @param  array<string, mixed>  $post
  */
-function gateShouldBootstrapApplication(string $basePath, array $server): bool
+function gateShouldBootstrapApplication(string $basePath, array $server, array $post = []): bool
 {
     if (is_file($basePath.'/.env')) {
         Dotenv::createImmutable($basePath)->safeLoad();
@@ -26,5 +27,5 @@ function gateShouldBootstrapApplication(string $basePath, array $server): bool
         return true;
     }
 
-    $gate->handleBlockedRequest($server);
+    $gate->handleBlockedRequest($server, $post);
 }

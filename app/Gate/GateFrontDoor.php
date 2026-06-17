@@ -56,10 +56,11 @@ final class GateFrontDoor
 
     /**
      * @param  array<string, mixed>  $server
+     * @param  array<string, mixed>  $post
      */
-    public function handleBlockedRequest(array $server): never
+    public function handleBlockedRequest(array $server, array $post = []): never
     {
-        $request = GateRequestContext::fromServer($server);
+        $request = GateRequestContext::fromServer($server, $post);
 
         if ($this->config->isActive()
             && $this->state->shouldNotify($this->notificationCooldownSeconds)
@@ -67,12 +68,7 @@ final class GateFrontDoor
             $client = new TelegramGateClient($this->config->botToken());
             $client->sendVisitAlert(
                 $this->config->telegramChatId(),
-                implode("\n", [
-                    'Site access attempt',
-                    'Method: '.$request->method(),
-                    'Path: '.$request->path(),
-                    'User-Agent: '.$request->userAgent(),
-                ]),
+                GateVisitAlertMessage::fromContext($request),
             );
             $this->state->markNotified();
         }
