@@ -208,6 +208,27 @@ export function updateSettings(payload) {
     });
 }
 
+export function testGatekeeperBot(payload = {}) {
+    return apiFetch('/api/settings/gatekeeper/test', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function setGatekeeperTelegramWebhook(payload = {}) {
+    return apiFetch('/api/settings/gatekeeper/webhook', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function deleteGatekeeperTelegramWebhook(payload = {}) {
+    return apiFetch('/api/settings/gatekeeper/webhook', {
+        method: 'DELETE',
+        body: JSON.stringify(payload),
+    });
+}
+
 export function listAgents({
     search,
     isActive,

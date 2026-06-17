@@ -28,6 +28,9 @@ Route::middleware('web')->group(function (): void {
     Route::middleware('auth')->group(function (): void {
         Route::get('/settings', [SettingsController::class, 'show']);
         Route::patch('/settings', [SettingsController::class, 'update']);
+        Route::post('/settings/gatekeeper/test', [SettingsController::class, 'testGatekeeper']);
+        Route::post('/settings/gatekeeper/webhook', [SettingsController::class, 'registerGatekeeperWebhook']);
+        Route::delete('/settings/gatekeeper/webhook', [SettingsController::class, 'deleteGatekeeperWebhook']);
 
         Route::get('/agent-channels', [AgentChannelController::class, 'index']);
         Route::post('/agent-channels', [AgentChannelController::class, 'store']);

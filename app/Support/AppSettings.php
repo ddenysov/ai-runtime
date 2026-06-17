@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Gate\GateConfigPublisher;
+use App\Channels\Services\TelegramWebhookRegistrar;
 use App\Models\AppSetting;
 
 class AppSettings
@@ -46,6 +47,7 @@ class AppSettings
                     self::KEY_GATEKEEPER_TELEGRAM_CHAT_ID,
                 ),
                 'webhook_url' => $this->gatekeeperWebhookUrl(),
+                'webhook_https_ready' => TelegramWebhookRegistrar::resolvePublicHttpsBase() !== null,
             ],
         ];
     }
@@ -78,6 +80,16 @@ class AppSettings
     public function promptGeneratorAgentId(): ?int
     {
         return $this->nullableInt(self::GROUP_PROMPTS, self::KEY_PROMPT_GENERATOR_AGENT_ID);
+    }
+
+    public function gatekeeperBotToken(): string
+    {
+        return $this->stringValue(self::GROUP_GATEKEEPER, self::KEY_GATEKEEPER_BOT_TOKEN);
+    }
+
+    public function gatekeeperTelegramChatId(): string
+    {
+        return $this->stringValue(self::GROUP_GATEKEEPER, self::KEY_GATEKEEPER_TELEGRAM_CHAT_ID);
     }
 
     /**

@@ -17,7 +17,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { getSettings, listAgents, updateSettings } from '@/lib/api';
+import {
+    deleteGatekeeperTelegramWebhook,
+    getSettings,
+    listAgents,
+    setGatekeeperTelegramWebhook,
+    testGatekeeperBot,
+    updateSettings,
+} from '@/lib/api';
 import {
     navigation,
     workspaces,
@@ -39,7 +46,11 @@ const gatekeeperTelegramChatId = ref('');
 const savedGatekeeperTelegramChatId = ref('');
 const gatekeeperBotTokenConfigured = ref(false);
 const gatekeeperWebhookUrl = ref('');
+const gatekeeperWebhookHttpsReady = ref(false);
 const savingGatekeeper = ref(false);
+const testingGatekeeper = ref(false);
+const registeringGatekeeperWebhook = ref(false);
+const gatekeeperTestResult = ref(null);
 
 const settingsNavigation = computed(() => navigation.map((item) => ({
     ...item,
@@ -55,6 +66,40 @@ const gatekeeperDirty = computed(() => (
     || gatekeeperTelegramChatId.value !== savedGatekeeperTelegramChatId.value
     || gatekeeperBotToken.value !== ''
 ));
+
+const canTestGatekeeper = computed(() => {
+    const hasToken = gatekeeperBotTokenConfigured.value || gatekeeperBotToken.value.trim() !== '';
+    const hasChatId = gatekeeperTelegramChatId.value.trim() !== '';
+
+    return hasToken && hasChatId;
+});
+
+const canRegisterGatekeeperWebhook = computed(() => (
+    gatekeeperWebhookHttpsReady.value
+    && (gatekeeperBotTokenConfigured.value || gatekeeperBotToken.value.trim() !== '')
+));
+
+function gatekeeperWebhookRegisterHint() {
+    if (!gatekeeperWebhookHttpsReady.value) {
+        return 'Set PUBLIC_APP_URL to a public HTTPS URL (e.g. ngrok) before registering.';
+    }
+
+    if (!gatekeeperBotTokenConfigured.value && gatekeeperBotToken.value.trim() === '') {
+        return 'Save a bot token first.';
+    }
+
+    return '';
+}
+
+function gatekeeperWebhookPayload() {
+    const payload = {};
+
+    if (gatekeeperBotToken.value.trim() !== '') {
+        payload.bot_token = gatekeeperBotToken.value.trim();
+    }
+
+    return payload;
+}
 
 function agentSelectValue(agentId) {
     return agentId ? String(agentId) : NONE_AGENT;
@@ -105,6 +150,7 @@ async function loadSettings() {
         savedGatekeeperTelegramChatId.value = gatekeeperTelegramChatId.value;
         gatekeeperBotTokenConfigured.value = Boolean(gatekeeper.bot_token_configured);
         gatekeeperWebhookUrl.value = gatekeeper.webhook_url ?? '';
+        gatekeeperWebhookHttpsReady.value = Boolean(gatekeeper.webhook_https_ready);
         gatekeeperBotToken.value = '';
     } catch (fetchError) {
         toast.error('Could not load settings', {
@@ -141,6 +187,90 @@ async function savePromptGenerator() {
     }
 }
 
+async function testGatekeeper() {
+    testingGatekeeper.value = true;
+    gatekeeperTestResult.value = null;
+
+    try {
+        const payload = {
+            telegram_chat_id: gatekeeperTelegramChatId.value.trim(),
+        };
+
+        if (gatekeeperBotToken.value.trim() !== '') {
+            payload.bot_token = gatekeeperBotToken.value.trim();
+        }
+
+        const response = await testGatekeeperBot(payload);
+
+        gatekeeperTestResult.value = response.data ?? null;
+
+        if (response.data?.ok) {
+            toast.success('Test message sent', {
+                description: response.data.message,
+            });
+        } else {
+            toast.error('Bot test failed', {
+                description: response.data?.message ?? 'Telegram API returned an error.',
+            });
+        }
+    } catch (testError) {
+        gatekeeperTestResult.value = testError.data?.data ?? {
+            ok: false,
+            message: testError.data?.message ?? testError.message,
+        };
+
+        toast.error('Bot test failed', {
+            description: gatekeeperTestResult.value.message,
+        });
+    } finally {
+        testingGatekeeper.value = false;
+    }
+}
+
+async function registerGatekeeperWebhook() {
+    if (!canRegisterGatekeeperWebhook.value) {
+        toast.error(gatekeeperWebhookRegisterHint() || 'Cannot register webhook.');
+
+        return;
+    }
+
+    registeringGatekeeperWebhook.value = true;
+
+    try {
+        const response = await setGatekeeperTelegramWebhook(gatekeeperWebhookPayload());
+        toast.success('Telegram webhook registered', {
+            description: response.data?.webhook_url ?? gatekeeperWebhookUrl.value,
+        });
+    } catch (error) {
+        toast.error('Webhook registration failed', {
+            description: error.data?.message ?? error.message,
+        });
+    } finally {
+        registeringGatekeeperWebhook.value = false;
+    }
+}
+
+async function removeGatekeeperWebhook() {
+    if (!gatekeeperBotTokenConfigured.value && gatekeeperBotToken.value.trim() === '') {
+        toast.error('Save a bot token first.');
+
+        return;
+    }
+
+    registeringGatekeeperWebhook.value = true;
+
+    try {
+        await deleteGatekeeperTelegramWebhook(gatekeeperWebhookPayload());
+        toast.success('Telegram webhook removed');
+    } catch (error) {
+        toast.error('Could not remove webhook', {
+            description: error.data?.message ?? error.message,
+        });
+    } finally {
+        registeringGatekeeperWebhook.value = false;
+    }
+}
+
 async function saveGatekeeper() {
     savingGatekeeper.value = true;
 
@@ -165,6 +295,7 @@ async function saveGatekeeper() {
         savedGatekeeperTelegramChatId.value = gatekeeperTelegramChatId.value;
         gatekeeperBotTokenConfigured.value = Boolean(gatekeeper.bot_token_configured);
         gatekeeperWebhookUrl.value = gatekeeper.webhook_url ?? '';
+        gatekeeperWebhookHttpsReady.value = Boolean(gatekeeper.webhook_https_ready);
         gatekeeperBotToken.value = '';
 
         toast.success('Gatekeeper settings saved');
@@ -321,35 +452,96 @@ onMounted(async () => {
 
                         <div
                             v-if="gatekeeperWebhookUrl"
-                            class="max-w-xl space-y-2"
+                            class="max-w-xl space-y-3"
                         >
                             <Label>Webhook URL</Label>
                             <p class="rounded-app-control border border-border bg-muted/30 px-3 py-2 font-mono text-xs break-all">
                                 {{ gatekeeperWebhookUrl }}
                             </p>
+                            <p
+                                v-if="gatekeeperWebhookRegisterHint()"
+                                class="app-muted-text text-sm"
+                            >
+                                {{ gatekeeperWebhookRegisterHint() }}
+                            </p>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    :disabled="!canRegisterGatekeeperWebhook || registeringGatekeeperWebhook || savingGatekeeper || loading"
+                                    @click="registerGatekeeperWebhook"
+                                >
+                                    <LoaderCircleIcon
+                                        v-if="registeringGatekeeperWebhook"
+                                        class="size-4 animate-spin"
+                                    />
+                                    Register webhook
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    :disabled="registeringGatekeeperWebhook || savingGatekeeper || loading || (!gatekeeperBotTokenConfigured && gatekeeperBotToken.trim() === '')"
+                                    @click="removeGatekeeperWebhook"
+                                >
+                                    Remove webhook
+                                </Button>
+                            </div>
                             <p class="app-muted-text text-sm">
-                                Register this URL with Telegram Bot API after saving.
+                                Calls Telegram setWebhook using PUBLIC_APP_URL. Save settings first if you changed the bot token.
                             </p>
                         </div>
 
-                        <div class="flex items-center gap-2">
-                            <Button
-                                size="sm"
-                                :disabled="!gatekeeperDirty || savingGatekeeper || loading"
-                                @click="saveGatekeeper"
-                            >
-                                <LoaderCircleIcon
-                                    v-if="savingGatekeeper"
-                                    class="size-4 animate-spin"
-                                />
-                                Save
-                            </Button>
-                            <p
-                                v-if="gatekeeperDirty"
-                                class="app-muted-text text-sm"
-                            >
-                                Unsaved changes
+                        <div class="max-w-xl space-y-3">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    :disabled="!gatekeeperDirty || savingGatekeeper || loading"
+                                    @click="saveGatekeeper"
+                                >
+                                    <LoaderCircleIcon
+                                        v-if="savingGatekeeper"
+                                        class="size-4 animate-spin"
+                                    />
+                                    Save
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    :disabled="!canTestGatekeeper || testingGatekeeper || savingGatekeeper || loading"
+                                    @click="testGatekeeper"
+                                >
+                                    <LoaderCircleIcon
+                                        v-if="testingGatekeeper"
+                                        class="size-4 animate-spin"
+                                    />
+                                    Test bot
+                                </Button>
+                                <p
+                                    v-if="gatekeeperDirty"
+                                    class="app-muted-text text-sm"
+                                >
+                                    Unsaved changes
+                                </p>
+                            </div>
+                            <p class="app-muted-text text-sm">
+                                Test bot sends a short message to your Telegram chat and shows the API response below.
                             </p>
+                            <div
+                                v-if="gatekeeperTestResult"
+                                class="space-y-2"
+                            >
+                                <Label>Test response</Label>
+                                <p
+                                    class="text-sm"
+                                    :class="gatekeeperTestResult.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'"
+                                >
+                                    {{ gatekeeperTestResult.message }}
+                                </p>
+                                <pre
+                                    v-if="gatekeeperTestResult.response"
+                                    class="max-h-48 overflow-auto rounded-app-control border border-border bg-muted/30 p-3 font-mono text-xs break-all whitespace-pre-wrap"
+                                >{{ JSON.stringify(gatekeeperTestResult.response, null, 2) }}</pre>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
