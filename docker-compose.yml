@@ -62,6 +62,27 @@ services:
       postgres:
         condition: service_healthy
 
+  telegram-webhook-consumer:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    working_dir: /var/www/html
+    restart: unless-stopped
+    command: php artisan telegram:consume-webhooks
+    environment:
+      UV_CACHE_DIR: /tmp/uv-cache
+      DB_HOST: postgres
+      DB_PORT: 5432
+    volumes:
+      - .:/var/www/html
+      - node_modules:/var/www/html/node_modules
+      - uv_cache:/tmp/uv-cache
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   nginx:
     image: nginx:latest
     ports:

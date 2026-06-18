@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 use Telegram\Bot\Objects\Message;
 use Telegram\Bot\Objects\Update;
 
-final class TelegramIncomingMessageHandler
+class TelegramIncomingMessageHandler
 {
     public function __construct(
         private readonly SendMessageAction $messages,

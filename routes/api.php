@@ -18,7 +18,10 @@ use App\Mcp\Http\Controllers\McpServerController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/integrations/gatekeeper/telegram/webhook', GatekeeperTelegramWebhookController::class);
-Route::post('/integrations/telegram/webhooks/{agentChannel}', TelegramAgentWebhookController::class);
+
+if (config('telegram.webhook.http_enabled')) {
+    Route::post('/integrations/telegram/webhooks/{agentChannel}', TelegramAgentWebhookController::class);
+}
 
 Route::middleware('web')->group(function (): void {
     Route::get('/auth/user', [SessionController::class, 'show']);
