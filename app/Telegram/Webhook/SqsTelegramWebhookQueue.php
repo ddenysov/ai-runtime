@@ -44,12 +44,19 @@ final class SqsTelegramWebhookQueue
             );
         }
 
+        $connectTimeout = max(1, (int) config('telegram.sqs.connect_timeout', 5));
+        $requestTimeout = max($connectTimeout, (int) config('telegram.sqs.request_timeout', 35));
+
         $client = new SqsClient([
             'version' => 'latest',
             'region' => $region,
             'credentials' => [
                 'key' => $key,
                 'secret' => $secret,
+            ],
+            'http' => [
+                'connect_timeout' => $connectTimeout,
+                'timeout' => $requestTimeout,
             ],
         ]);
 

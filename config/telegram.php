@@ -18,6 +18,8 @@ return [
         'wait_time_seconds' => (int) env('SQS_WEBHOOK_WAIT_SECONDS', 20),
         'max_messages' => (int) env('SQS_WEBHOOK_MAX_MESSAGES', 10),
         'visibility_timeout' => (int) env('SQS_WEBHOOK_VISIBILITY_TIMEOUT', 120),
+        'connect_timeout' => (int) env('SQS_WEBHOOK_CONNECT_TIMEOUT', 5),
+        'request_timeout' => (int) env('SQS_WEBHOOK_REQUEST_TIMEOUT', 35),
     ],
 
 ];

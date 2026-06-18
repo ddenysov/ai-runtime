@@ -68,7 +68,7 @@ services:
       dockerfile: docker/php/Dockerfile
     working_dir: /var/www/html
     restart: unless-stopped
-    command: php artisan telegram:consume-webhooks
+    command: php artisan telegram:consume-webhooks -v
     environment:
       UV_CACHE_DIR: /tmp/uv-cache
       DB_HOST: postgres

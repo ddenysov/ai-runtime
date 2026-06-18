@@ -2,6 +2,7 @@ SHELL := /bin/sh
 
 APP_SERVICE := app
 WORKER_SERVICE := queue-worker
+WEBHOOK_CONSUMER_SERVICE := telegram-webhook-consumer
 COMPOSE := docker compose
 
 INFRA_DIR := infra
@@ -11,7 +12,7 @@ AWS_REGION ?= eu-central-1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build up down restart update backup restore backup-list ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook infra-sync-api-stage
+.PHONY: help build up down restart update backup restore backup-list ps logs worker-logs consumer-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook infra-sync-api-stage
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable commands:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -54,6 +55,9 @@ logs: ## Follow container logs
 worker-logs: ## Follow queue worker logs
 	$(COMPOSE) logs -f $(WORKER_SERVICE)
 
+consumer-logs: ## Follow Telegram webhook SQS consumer logs
+	$(COMPOSE) logs -f $(WEBHOOK_CONSUMER_SERVICE)
+
 shell: ## Open shell in the app container
 	$(COMPOSE) exec $(APP_SERVICE) sh
 
@@ -84,7 +88,8 @@ migrate: ## Run database migrations
 migrate-fresh: ## Recreate database schema and seed
 	$(COMPOSE) exec $(APP_SERVICE) php artisan migrate:fresh --seed
 
-test: ## Run Laravel test suite
+test: ## Run Laravel test suite (sqlite :memory: only — never touches Postgres)
+	$(COMPOSE) exec $(APP_SERVICE) php artisan config:clear
 	$(COMPOSE) exec $(APP_SERVICE) php artisan test
 
 pint: ## Format PHP code with Pint

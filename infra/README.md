@@ -233,5 +233,8 @@ SAM можно задеплоить **до** Laravel consumer — сообщен
 3. `TELEGRAM_WEBHOOK_INGRESS=sqs`
 4. `TELEGRAM_WEBHOOK_HTTP_ENABLED=false`
 5. Перерегистрировать webhooks: `php artisan telegram:set-webhook --all`
+6. Docker: после изменения `.env` (AWS-ключи, SQS) пересоздать consumer:
+   `docker compose up -d telegram-webhook-consumer --force-recreate`
+   (`restart` не подхватывает новые переменные из `env_file`.)
 
 См. [docs/aws-production-security-spec.md](../docs/aws-production-security-spec.md).
