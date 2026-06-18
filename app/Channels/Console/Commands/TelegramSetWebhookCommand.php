@@ -3,6 +3,7 @@
 namespace App\Channels\Console\Commands;
 
 use App\Channels\Models\AgentChannel;
+use App\Channels\Services\TelegramWebhookRegistrar;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 use JsonException;
@@ -133,7 +134,14 @@ class TelegramSetWebhookCommand extends Command
             return self::FAILURE;
         }
 
-        $webhookUrl = $base.'/api/integrations/telegram/webhooks/'.$channel->uuid;
+        $webhookUrl = app(TelegramWebhookRegistrar::class)->webhookUrlFor($channel);
+
+        if ($webhookUrl === null) {
+            $this->error('Could not build webhook URL for '.$channel->uuid.' (check PUBLIC_APP_URL and TELEGRAM_WEBHOOK_AGENT_PATH).');
+
+            return self::FAILURE;
+        }
+
         $label = $channel->name.' ('.$channel->uuid.')';
 
         try {

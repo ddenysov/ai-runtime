@@ -3,6 +3,7 @@
 namespace App\Channels\Http\Resources;
 
 use App\Channels\Models\AgentChannel;
+use App\Channels\Models\AgentChannelThread;
 use App\Channels\Services\TelegramWebhookRegistrar;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -55,6 +56,10 @@ class AgentChannelResource extends JsonResource
             $registrar = app(TelegramWebhookRegistrar::class);
             $data['telegram_webhook_https_ready'] = TelegramWebhookRegistrar::resolvePublicHttpsBase() !== null;
             $data['telegram_has_bot_token'] = in_array('bot_token', $settingsKeys, true);
+            $defaultChatId = $this->defaultTelegramChatId();
+            if ($defaultChatId !== null) {
+                $data['telegram_default_chat_id'] = $defaultChatId;
+            }
             $webhookUrl = $registrar->webhookUrlFor($this->resource);
             if ($webhookUrl !== null) {
                 $data['telegram_webhook_url'] = $webhookUrl;
@@ -95,5 +100,21 @@ class AgentChannelResource extends JsonResource
         }
 
         return $out;
+    }
+
+    private function defaultTelegramChatId(): ?string
+    {
+        $thread = AgentChannelThread::query()
+            ->where('agent_channel_id', $this->id)
+            ->orderBy('id')
+            ->first();
+
+        if (! $thread instanceof AgentChannelThread) {
+            return null;
+        }
+
+        $chatId = trim($thread->external_chat_id);
+
+        return $chatId === '' ? null : $chatId;
     }
 }

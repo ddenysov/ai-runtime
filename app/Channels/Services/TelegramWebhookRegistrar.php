@@ -32,7 +32,9 @@ final class TelegramWebhookRegistrar
             return null;
         }
 
-        return $base.'/api/integrations/telegram/webhooks/'.$channel->uuid;
+        $path = str_replace('{uuid}', $channel->uuid, (string) config('telegram.webhook.agent_channel_path'));
+
+        return $base.$path;
     }
 
     /**

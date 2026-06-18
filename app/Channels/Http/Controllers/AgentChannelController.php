@@ -4,10 +4,13 @@ namespace App\Channels\Http\Controllers;
 
 use App\Channels\Http\Requests\DestroyAgentChannelRequest;
 use App\Channels\Http\Requests\StoreAgentChannelRequest;
+use App\Channels\Http\Requests\TestAgentChannelTelegramRequest;
 use App\Channels\Http\Requests\UpdateAgentChannelRequest;
 use App\Channels\Http\Resources\AgentChannelResource;
 use App\Channels\Models\AgentChannel;
+use App\Channels\Models\AgentChannelThread;
 use App\Channels\Services\TelegramWebhookRegistrar;
+use App\Gate\TelegramGateClient;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class AgentChannelController extends Controller
 {
@@ -142,6 +146,40 @@ class AgentChannelController extends Controller
         return response()->noContent();
     }
 
+    public function testTelegram(TestAgentChannelTelegramRequest $request, AgentChannel $agentChannel): JsonResponse
+    {
+        if ($agentChannel->type !== 'telegram') {
+            throw ValidationException::withMessages([
+                'type' => 'Channel type must be telegram.',
+            ]);
+        }
+
+        $botToken = $this->nullableTrimmedString($request->input('bot_token'))
+            ?? $this->botTokenFromChannel($agentChannel);
+
+        if ($botToken === '') {
+            throw ValidationException::withMessages([
+                'bot_token' => 'Bot token is required.',
+            ]);
+        }
+
+        $telegramChatId = $this->nullableTrimmedString($request->input('telegram_chat_id'))
+            ?? $this->defaultTelegramChatId($agentChannel);
+
+        if ($telegramChatId === '') {
+            throw ValidationException::withMessages([
+                'telegram_chat_id' => 'Telegram chat ID is required. Message the bot once or enter a chat ID.',
+            ]);
+        }
+
+        $message = 'Delivery channel test message ('.$agentChannel->name.')';
+        $result = (new TelegramGateClient($botToken))->sendTestMessage($telegramChatId, $message);
+
+        return response()->json([
+            'data' => $result,
+        ], $result['ok'] ? 200 : 422);
+    }
+
     public function destroy(DestroyAgentChannelRequest $request, AgentChannel $agentChannel): Response
     {
         DB::transaction(function () use ($request, $agentChannel): void {
@@ -196,5 +234,39 @@ class AgentChannelController extends Controller
         }
 
         return $merged;
+    }
+
+    private function botTokenFromChannel(AgentChannel $channel): string
+    {
+        $settings = is_array($channel->settings) ? $channel->settings : [];
+
+        return isset($settings['bot_token']) && is_string($settings['bot_token'])
+            ? trim($settings['bot_token'])
+            : '';
+    }
+
+    private function defaultTelegramChatId(AgentChannel $channel): string
+    {
+        $thread = AgentChannelThread::query()
+            ->where('agent_channel_id', $channel->id)
+            ->orderBy('id')
+            ->first();
+
+        if (! $thread instanceof AgentChannelThread) {
+            return '';
+        }
+
+        return trim($thread->external_chat_id);
+    }
+
+    private function nullableTrimmedString(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 }

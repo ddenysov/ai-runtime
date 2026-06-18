@@ -39,6 +39,7 @@ Route::middleware('web')->group(function (): void {
         Route::delete('/agent-channels/{agentChannel}', [AgentChannelController::class, 'destroy']);
         Route::post('/agent-channels/{agentChannel}/telegram/webhook', [AgentChannelController::class, 'setTelegramWebhook']);
         Route::delete('/agent-channels/{agentChannel}/telegram/webhook', [AgentChannelController::class, 'deleteTelegramWebhook']);
+        Route::post('/agent-channels/{agentChannel}/telegram/test', [AgentChannelController::class, 'testTelegram']);
 
         Route::get('/agents', [AgentController::class, 'index']);
         Route::post('/agents', [AgentController::class, 'store']);

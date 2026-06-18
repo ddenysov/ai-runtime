@@ -22,6 +22,8 @@ external/mcp copy/mcp-google-workspace/g.json
 /storage/*.key
 /storage/diary
 /storage/pail
+/storage/db-backups/*
+!/storage/db-backups/.gitkeep
 /vendor
 _ide_helper.php
 Homestead.json

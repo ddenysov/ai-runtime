@@ -478,6 +478,13 @@ export function deleteAgentChannelTelegramWebhook(uuid) {
     });
 }
 
+export function testAgentChannelTelegram(uuid, payload = {}) {
+    return apiFetch(`/api/agent-channels/${encodeURIComponent(uuid)}/telegram/test`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
 export function listAgentSchedules(agentId) {
     return apiFetch(`/api/agents/${agentId}/schedules`);
 }

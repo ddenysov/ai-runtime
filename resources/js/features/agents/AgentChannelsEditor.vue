@@ -31,6 +31,7 @@ import {
     getAgentChannel,
     listAgentChannels,
     setAgentChannelTelegramWebhook,
+    testAgentChannelTelegram,
     updateAgentChannel,
 } from '@/lib/api';
 
@@ -65,6 +66,9 @@ const editingTelegramMeta = ref({
 const deleteDialogOpen = ref(false);
 const deleteTarget = ref(null);
 const webhookLoadingUuid = ref(null);
+const testingUuid = ref(null);
+const channelTestChatIds = ref({});
+const channelTestResults = ref({});
 
 const form = ref({
     name: '',
@@ -74,6 +78,7 @@ const form = ref({
     metadataText: '',
     telegram_bot_token: '',
     telegram_webhook_secret: '',
+    telegram_test_chat_id: '',
     slack_bot_token: '',
     slack_signing_secret: '',
     webhook_url: '',
@@ -89,6 +94,7 @@ function resetForm() {
         metadataText: '',
         telegram_bot_token: '',
         telegram_webhook_secret: '',
+        telegram_test_chat_id: '',
         slack_bot_token: '',
         slack_signing_secret: '',
         webhook_url: '',
@@ -219,7 +225,22 @@ async function loadChannels() {
 
     try {
         const data = await listAgentChannels({ agentId: props.agentId });
-        channels.value = Array.isArray(data?.data) ? data.data : [];
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        channels.value = rows;
+
+        const nextChatIds = { ...channelTestChatIds.value };
+
+        for (const channel of rows) {
+            if (channel.type !== 'telegram') {
+                continue;
+            }
+
+            if (!nextChatIds[channel.uuid] && channel.telegram_default_chat_id) {
+                nextChatIds[channel.uuid] = channel.telegram_default_chat_id;
+            }
+        }
+
+        channelTestChatIds.value = nextChatIds;
     } catch (error) {
         channels.value = [];
         listError.value = error.message ?? 'Could not load delivery channels.';
@@ -283,6 +304,7 @@ async function openEditDialog(summary) {
             webhook_secret: '',
         };
         applySettingsToForm(channel.settings ?? {}, typ);
+        form.value.telegram_test_chat_id = channel.telegram_default_chat_id ?? '';
         editingVersion.value = Number(channel.version ?? 0);
         editingTelegramMeta.value = {
             telegram_webhook_https_ready: !!channel.telegram_webhook_https_ready,
@@ -447,6 +469,104 @@ async function registerTelegramWebhook(channel) {
     }
 }
 
+function canTestTelegramChannel(channel, chatId = '') {
+    const resolvedChatId = (chatId || channelTestChatIds.value[channel?.uuid] || channel?.telegram_default_chat_id || '').trim();
+
+    return channel?.type === 'telegram'
+        && channelHasBotToken(channel)
+        && resolvedChatId !== '';
+}
+
+function telegramTestHint(channel, chatId = '') {
+    if (channel?.type !== 'telegram') {
+        return '';
+    }
+
+    if (!channelHasBotToken(channel)) {
+        return 'Save a bot token for this channel first.';
+    }
+
+    const resolvedChatId = (chatId || channelTestChatIds.value[channel?.uuid] || channel?.telegram_default_chat_id || '').trim();
+
+    if (resolvedChatId === '') {
+        return 'Enter a Telegram chat ID or message the bot once.';
+    }
+
+    return '';
+}
+
+async function testTelegramChannel(channel, chatIdOverride = '') {
+    const uuid = channel?.uuid ?? editingUuid.value;
+
+    if (!uuid) {
+        toast.error('Save the channel before testing the bot.');
+
+        return;
+    }
+
+    const telegramChatId = (chatIdOverride
+        || channelTestChatIds.value[uuid]
+        || channel?.telegram_default_chat_id
+        || form.value.telegram_test_chat_id
+        || '').trim();
+
+    if (!canTestTelegramChannel(channel, telegramChatId)) {
+        toast.error(telegramTestHint(channel, telegramChatId) || 'Cannot test this channel.');
+
+        return;
+    }
+
+    testingUuid.value = uuid;
+    channelTestResults.value = {
+        ...channelTestResults.value,
+        [uuid]: null,
+    };
+
+    try {
+        const payload = {
+            telegram_chat_id: telegramChatId,
+        };
+
+        if (form.value.telegram_bot_token.trim() !== '') {
+            payload.bot_token = form.value.telegram_bot_token.trim();
+        }
+
+        const response = await testAgentChannelTelegram(uuid, payload);
+        const result = response.data ?? null;
+
+        channelTestResults.value = {
+            ...channelTestResults.value,
+            [uuid]: result,
+        };
+
+        if (result?.ok) {
+            toast.success('Test message sent', {
+                description: result.message,
+            });
+        } else {
+            toast.error('Bot test failed', {
+                description: result?.message ?? 'Telegram API returned an error.',
+            });
+        }
+    } catch (error) {
+        const result = error.data?.data ?? {
+            ok: false,
+            message: firstError(error.data) ?? error.message ?? 'Bot test failed',
+        };
+
+        channelTestResults.value = {
+            ...channelTestResults.value,
+            [uuid]: result,
+        };
+
+        toast.error('Bot test failed', {
+            description: result.message,
+        });
+    } finally {
+        testingUuid.value = null;
+    }
+}
+
 async function removeTelegramWebhook(channel) {
     webhookLoadingUuid.value = channel.uuid;
 
@@ -524,9 +644,45 @@ watch(() => props.agentId, loadChannels);
                     >
                         {{ telegramWebhookRegisterHint(channel) }}
                     </p>
+                    <div
+                        v-if="channel.type === 'telegram'"
+                        class="mt-3 space-y-2"
+                    >
+                        <div class="space-y-1">
+                            <Label :for="`channel-test-chat-${channel.uuid}`">Telegram chat ID</Label>
+                            <Input
+                                :id="`channel-test-chat-${channel.uuid}`"
+                                v-model="channelTestChatIds[channel.uuid]"
+                                autocomplete="off"
+                                class="font-mono text-xs"
+                                placeholder="From @userinfobot or after first message"
+                            />
+                        </div>
+                        <p
+                            v-if="channelTestResults[channel.uuid]"
+                            class="text-sm"
+                            :class="channelTestResults[channel.uuid].ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'"
+                        >
+                            {{ channelTestResults[channel.uuid].message }}
+                        </p>
+                    </div>
                     <div class="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" @click="openEditDialog(channel)">
                             Edit
+                        </Button>
+                        <Button
+                            v-if="channel.type === 'telegram'"
+                            size="sm"
+                            variant="outline"
+                            :disabled="testingUuid === channel.uuid || !canTestTelegramChannel(channel)"
+                            :title="telegramTestHint(channel) || undefined"
+                            @click="testTelegramChannel(channel)"
+                        >
+                            <LoaderCircleIcon
+                                v-if="testingUuid === channel.uuid"
+                                class="mr-2 size-4 animate-spin"
+                            />
+                            Test bot
                         </Button>
                         <Button
                             v-if="channel.type === 'telegram'"
@@ -649,24 +805,57 @@ watch(() => props.agentId, loadChannels);
                             class="font-mono text-xs"
                         />
                     </div>
-                    <Button
-                        v-if="dialogMode === 'edit' && editingUuid"
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        class="w-full"
-                        :disabled="webhookLoadingUuid === editingUuid || saving || editLoading || !canRegisterTelegramWebhook(editDialogTelegramChannel())"
-                        :title="telegramWebhookRegisterHint(editDialogTelegramChannel()) || undefined"
-                        @click="registerTelegramWebhook(editDialogTelegramChannel())"
-                    >
-                        <LoaderCircleIcon
-                            v-if="webhookLoadingUuid === editingUuid"
-                            class="mr-2 size-4 animate-spin"
+                    <div class="space-y-2">
+                        <Label for="channel-tg-test-chat">Telegram chat ID (for test)</Label>
+                        <Input
+                            id="channel-tg-test-chat"
+                            v-model="form.telegram_test_chat_id"
+                            autocomplete="off"
+                            class="font-mono text-xs"
+                            placeholder="From @userinfobot or after first message"
                         />
-                        Register webhook with Telegram
-                    </Button>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            v-if="dialogMode === 'edit' && editingUuid"
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            :disabled="testingUuid === editingUuid || saving || editLoading || !canTestTelegramChannel(editDialogTelegramChannel(), form.telegram_test_chat_id)"
+                            :title="telegramTestHint(editDialogTelegramChannel(), form.telegram_test_chat_id) || undefined"
+                            @click="testTelegramChannel(editDialogTelegramChannel(), form.telegram_test_chat_id)"
+                        >
+                            <LoaderCircleIcon
+                                v-if="testingUuid === editingUuid"
+                                class="mr-2 size-4 animate-spin"
+                            />
+                            Test bot
+                        </Button>
+                        <Button
+                            v-if="dialogMode === 'edit' && editingUuid"
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            :disabled="webhookLoadingUuid === editingUuid || saving || editLoading || !canRegisterTelegramWebhook(editDialogTelegramChannel())"
+                            :title="telegramWebhookRegisterHint(editDialogTelegramChannel()) || undefined"
+                            @click="registerTelegramWebhook(editDialogTelegramChannel())"
+                        >
+                            <LoaderCircleIcon
+                                v-if="webhookLoadingUuid === editingUuid"
+                                class="mr-2 size-4 animate-spin"
+                            />
+                            Register webhook
+                        </Button>
+                    </div>
+                    <p
+                        v-if="dialogMode === 'edit' && editingUuid && channelTestResults[editingUuid]"
+                        class="text-sm"
+                        :class="channelTestResults[editingUuid].ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'"
+                    >
+                        {{ channelTestResults[editingUuid].message }}
+                    </p>
                     <p class="app-muted-text text-xs">
-                        Calls Telegram setWebhook using PUBLIC_APP_URL. Save the channel first if you changed the bot token.
+                        Test bot sends a short message to the chat ID above. Register webhook uses PUBLIC_APP_URL.
                     </p>
                 </div>
 

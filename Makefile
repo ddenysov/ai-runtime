@@ -11,7 +11,7 @@ AWS_REGION ?= eu-central-1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build up down restart update ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook infra-sync-api-stage
+.PHONY: help build up down restart update backup restore backup-list ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook infra-sync-api-stage
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable commands:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -28,11 +28,22 @@ down: ## Stop and remove containers
 restart: down up ## Restart containers
 
 update: ## Pull latest code and restart containers
+	$(MAKE) backup
 	git pull
 	$(MAKE) down
 	$(MAKE) up
 	$(MAKE) npm-build
 	$(MAKE) migrate
+
+backup: ## Create numbered PostgreSQL backup (storage/db-backups/NNN.sql.gz)
+	@sh scripts/db-backup.sh backup
+
+restore: ## Restore PostgreSQL backup, e.g. make restore VERSION=3
+	@test -n "$(VERSION)" || (echo >&2 "Usage: make restore VERSION=<number>"; exit 1)
+	@sh scripts/db-backup.sh restore "$(VERSION)"
+
+backup-list: ## List local PostgreSQL backups
+	@sh scripts/db-backup.sh list
 
 ps: ## Show container status
 	$(COMPOSE) ps
