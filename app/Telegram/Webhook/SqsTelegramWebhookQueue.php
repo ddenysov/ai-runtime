@@ -37,7 +37,11 @@ final class SqsTelegramWebhookQueue
         $secret = config('telegram.sqs.secret');
 
         if (! is_string($key) || trim($key) === '' || ! is_string($secret) || trim($secret) === '') {
-            throw new InvalidArgumentException('AWS credentials are not configured.');
+            throw new InvalidArgumentException(
+                'AWS credentials are not configured for the Telegram webhook consumer. '
+                .'Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY once in .env (home-consumer IAM key). '
+                .'Duplicate AWS_* entries later in the file override earlier values and leave credentials empty.',
+            );
         }
 
         $client = new SqsClient([
