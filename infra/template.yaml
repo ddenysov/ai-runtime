@@ -1,0 +1,322 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ai-runtime Telegram webhooks — API Gateway REST → SQS (no Lambda)
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: prod
+    Description: Deployment environment label (used in resource names)
+  QueueName:
+    Type: String
+    Default: ai-runtime-telegram-webhooks
+    Description: Main SQS queue name for Telegram webhook envelopes
+  WafRateLimit:
+    Type: Number
+    Default: 1000
+    Description: Max requests per 5-minute window per IP (WAF rate-based rule)
+  EnableManagedWafRules:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable AWSManagedRulesCommonRuleSet (test before enabling in prod)
+  CreateHomeConsumerUser:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Create IAM user + access key for home host SQS consumer (.env)
+  ApiDeploymentRevision:
+    Type: String
+    Default: '3'
+    Description: Bump to force new API Gateway deployment + stage refresh after integration changes
+
+Conditions:
+  UseManagedWafRules: !Equals [!Ref EnableManagedWafRules, 'true']
+  ShouldCreateHomeConsumerUser: !Equals [!Ref CreateHomeConsumerUser, 'true']
+
+Resources:
+  TelegramWebhookDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${QueueName}-dlq'
+      MessageRetentionPeriod: 1209600
+
+  TelegramWebhookQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref QueueName
+      VisibilityTimeout: 120
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TelegramWebhookDLQ.Arn
+        maxReceiveCount: 5
+
+  ApiGatewaySqsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-apigw-sqs'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SendToWebhookQueue
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt TelegramWebhookQueue.Arn
+
+  WebhookRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${AWS::StackName}-webhooks'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Body:
+        Fn::Sub:
+          - |
+            openapi: 3.0.1
+            info:
+              title: ai-runtime Telegram Webhooks
+              version: '1.0'
+            paths:
+              /webhooks/telegram/{channelUuid}:
+                post:
+                  operationId: postAgentChannelWebhook
+                  parameters:
+                    - name: channelUuid
+                      in: path
+                      required: true
+                      schema:
+                        type: string
+                  requestBody:
+                    required: false
+                    content:
+                      application/json:
+                        schema:
+                          type: object
+                  responses:
+                    '200':
+                      description: OK
+                      content:
+                        application/json:
+                          schema:
+                            type: object
+                  x-amazon-apigateway-integration:
+                    type: aws
+                    httpMethod: POST
+                    uri: arn:aws:apigateway:${AWS::Region}:sqs:path/${AWS::AccountId}/${QueueName}
+                    credentials: ${ApiGatewayRoleArn}
+                    passthroughBehavior: never
+                    requestParameters:
+                      integration.request.header.Content-Type: "'application/x-www-form-urlencoded'"
+                    requestTemplates:
+                      application/json: |
+                        #set($channelUuid = $input.params('channelUuid'))
+                        #set($secret = $input.params().header.get('X-Telegram-Bot-Api-Secret-Token'))
+                        #if(!$secret)
+                          #set($secret = '')
+                        #end
+                        #set($telegramBody = $input.body)
+                        #if(!$telegramBody || $telegramBody == "")
+                          #set($telegramBody = "{}")
+                        #end
+                        #set($envelope = "{""version"":1,""type"":""agent_channel"",""channel_uuid"":""$channelUuid"",""received_at"":""$context.requestTime"",""request_id"":""$context.requestId"",""headers"":{""x-telegram-bot-api-secret-token"":""$secret""},""body"":$telegramBody}")
+                        Action=SendMessage&MessageBody=$util.urlEncode($envelope)
+                    responses:
+                      default:
+                        statusCode: '200'
+                        selectionPattern: '<SendMessageResponse'
+                        responseTemplates:
+                          application/json: '{"ok": true}'
+          - QueueName: !GetAtt TelegramWebhookQueue.QueueName
+            ApiGatewayRoleArn: !GetAtt ApiGatewaySqsRole.Arn
+
+  WebhookApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - TelegramWebhookQueue
+      - ApiGatewaySqsRole
+    Properties:
+      RestApiId: !Ref WebhookRestApi
+      Description: !Sub 'Webhook API deployment ${AWS::StackName} rev${ApiDeploymentRevision}'
+
+  WebhookApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref WebhookRestApi
+      DeploymentId: !Ref WebhookApiDeployment
+      StageName: Prod
+      TracingEnabled: true
+      Description: !Sub 'Prod stage ${AWS::StackName} rev${ApiDeploymentRevision}'
+
+  WebhookWafWebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub '${AWS::StackName}-webhook-waf'
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${AWS::StackName}-webhook-waf'
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: RateLimitPerIp
+          Priority: 0
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref WafRateLimit
+              AggregateKeyType: IP
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${AWS::StackName}-rate-limit'
+            SampledRequestsEnabled: true
+        - !If
+          - UseManagedWafRules
+          - Name: AWSManagedRulesCommonRuleSet
+            Priority: 1
+            OverrideAction:
+              None: {}
+            Statement:
+              ManagedRuleGroupStatement:
+                VendorName: AWS
+                Name: AWSManagedRulesCommonRuleSet
+            VisibilityConfig:
+              CloudWatchMetricsEnabled: true
+              MetricName: !Sub '${AWS::StackName}-common-rules'
+              SampledRequestsEnabled: true
+          - !Ref AWS::NoValue
+
+  WebhookWafAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    DependsOn: WebhookApiStage
+    Properties:
+      ResourceArn: !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/${WebhookRestApi}/stages/Prod'
+      WebACLArn: !GetAtt WebhookWafWebAcl.Arn
+
+  DlqMessagesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-dlq-messages'
+      AlarmDescription: Telegram webhook DLQ has visible messages (processing failures)
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt TelegramWebhookDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  HomeConsumerUser:
+    Type: AWS::IAM::User
+    Condition: ShouldCreateHomeConsumerUser
+    Properties:
+      UserName: !Sub '${AWS::StackName}-home-consumer'
+      Policies:
+        - PolicyName: ConsumeTelegramWebhookQueue
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt TelegramWebhookQueue.Arn
+
+  HomeConsumerAccessKey:
+    Type: AWS::IAM::AccessKey
+    Condition: ShouldCreateHomeConsumerUser
+    Properties:
+      UserName: !Ref HomeConsumerUser
+
+Outputs:
+  WebhookApiBaseUrl:
+    Description: Base URL for Telegram webhook registration (PUBLIC_APP_URL)
+    Value: !Sub 'https://${WebhookRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+    Export:
+      Name: !Sub '${AWS::StackName}-WebhookApiBaseUrl'
+
+  WebhookApiId:
+    Description: API Gateway REST API ID
+    Value: !Ref WebhookRestApi
+
+  TelegramWebhookQueueUrl:
+    Description: Main webhook queue URL (for home consumer IAM policy)
+    Value: !Ref TelegramWebhookQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-TelegramWebhookQueueUrl'
+
+  TelegramWebhookQueueArn:
+    Description: Main webhook queue ARN
+    Value: !GetAtt TelegramWebhookQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TelegramWebhookQueueArn'
+
+  TelegramWebhookQueueName:
+    Description: Main webhook queue name (SQS_WEBHOOK_QUEUE env)
+    Value: !GetAtt TelegramWebhookQueue.QueueName
+
+  TelegramWebhookDLQUrl:
+    Description: Dead-letter queue URL
+    Value: !Ref TelegramWebhookDLQ
+
+  TelegramWebhookDLQArn:
+    Description: Dead-letter queue ARN
+    Value: !GetAtt TelegramWebhookDLQ.Arn
+
+  HomeConsumerIamPolicy:
+    Description: Minimal IAM policy JSON for home host SQS consumer (reference)
+    Value: !Sub |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "sqs:ReceiveMessage",
+              "sqs:DeleteMessage",
+              "sqs:GetQueueAttributes",
+              "sqs:ChangeMessageVisibility"
+            ],
+            "Resource": "${TelegramWebhookQueue.Arn}"
+          }
+        ]
+      }
+
+  HomeConsumerUserName:
+    Condition: ShouldCreateHomeConsumerUser
+    Description: IAM user for home host SQS polling
+    Value: !Ref HomeConsumerUser
+
+  HomeConsumerAccessKeyId:
+    Condition: ShouldCreateHomeConsumerUser
+    Description: Access key ID for home host (.env AWS_ACCESS_KEY_ID)
+    Value: !Ref HomeConsumerAccessKey
+
+  HomeConsumerSecretAccessKey:
+    Condition: ShouldCreateHomeConsumerUser
+    Description: Secret access key for home host — copy once after first deploy
+    Value: !GetAtt HomeConsumerAccessKey.SecretAccessKey
+
+  HomeConsumerSqsPrefix:
+    Condition: ShouldCreateHomeConsumerUser
+    Description: SQS prefix for Laravel (.env SQS_PREFIX)
+    Value: !Sub 'https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}'

@@ -1,0 +1,8 @@
+{
+  "EnvironmentName": "prod",
+  "QueueName": "ai-runtime-telegram-webhooks",
+  "WafRateLimit": "1000",
+  "EnableManagedWafRules": "false",
+  "CreateHomeConsumerUser": "true",
+  "ApiDeploymentRevision": "3"
+}

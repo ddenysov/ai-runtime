@@ -4,9 +4,14 @@ APP_SERVICE := app
 WORKER_SERVICE := queue-worker
 COMPOSE := docker compose
 
+INFRA_DIR := infra
+SAM_STACK ?= ai-runtime-webhooks
+INFRA_CHANNEL_UUID ?= 550e8400-e29b-41d4-a716-446655440000
+AWS_REGION ?= eu-central-1
+
 .DEFAULT_GOAL := help
 
-.PHONY: help build up down restart update ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all
+.PHONY: help build up down restart update ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable commands:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -120,3 +125,20 @@ telegram-set-webhook-all: ## Call Telegram setWebhook for every Telegram channel
 
 telegram-delete-webhook-all: ## Call Telegram deleteWebhook for every Telegram channel that has a bot_token
 	$(COMPOSE) exec $(APP_SERVICE) php artisan telegram:set-webhook --all --delete
+
+# AWS webhook ingress (API Gateway → SQS). Deploy credentials: `aws configure` (not home-consumer key).
+infra-validate: ## Validate SAM template in infra/
+	cd $(INFRA_DIR) && sam validate
+
+infra-deploy: ## Build and deploy AWS webhook stack (API GW + SQS + home IAM user)
+	cd $(INFRA_DIR) && sam build && sam deploy
+
+infra-deploy-guided: ## First-time SAM deploy (interactive; saves samconfig.toml)
+	cd $(INFRA_DIR) && sam build && sam deploy --guided
+
+infra-env: ## Print .env block for home SQS consumer (SAM_STACK=ai-runtime-webhooks)
+	@sh $(INFRA_DIR)/scripts/print-home-env.sh "$(SAM_STACK)"
+
+infra-test-webhook: ## POST test webhook to API GW and read one message from SQS
+	@AWS_DEFAULT_REGION="$(AWS_REGION)" UPDATE_ID="$(UPDATE_ID)" \
+		sh $(INFRA_DIR)/scripts/test-webhook.sh "$(SAM_STACK)" "$(INFRA_CHANNEL_UUID)"

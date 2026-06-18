@@ -1,0 +1,63 @@
+openapi: 3.0.1
+info:
+  title: ai-runtime Telegram Webhooks
+  version: '1.0'
+  description: |
+    Public HTTPS ingress for Telegram webhooks.
+    API Gateway REST → SQS SendMessage (no Lambda).
+
+paths:
+  /webhooks/telegram/{channelUuid}:
+    post:
+      operationId: postAgentChannelWebhook
+      summary: Agent channel Telegram webhook
+      parameters:
+        - name: channelUuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Acknowledged (Telegram-compatible)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+      x-amazon-apigateway-integration:
+        type: aws
+        httpMethod: POST
+        uri: arn:aws:apigateway:${Region}:sqs:path/${AccountId}/${QueueName}
+        credentials: ${ApiGatewayRoleArn}
+        passthroughBehavior: never
+        requestParameters:
+          integration.request.header.Content-Type: "'application/x-www-form-urlencoded'"
+        requestTemplates:
+          application/json: |
+            #set($channelUuid = $input.params('channelUuid'))
+            #set($secret = $input.params().header.get('X-Telegram-Bot-Api-Secret-Token'))
+            #if(!$secret)
+              #set($secret = '')
+            #end
+            #set($telegramBody = $input.body)
+            #if(!$telegramBody || $telegramBody == "")
+              #set($telegramBody = "{}")
+            #end
+            #set($envelope = "{""version"":1,""type"":""agent_channel"",""channel_uuid"":""$channelUuid"",""received_at"":""$context.requestTime"",""request_id"":""$context.requestId"",""headers"":{""x-telegram-bot-api-secret-token"":""$secret""},""body"":$telegramBody}")
+            Action=SendMessage&MessageBody=$util.urlEncode($envelope)
+        responses:
+          default:
+            statusCode: '200'
+            selectionPattern: '<SendMessageResponse'
+            responseTemplates:
+              application/json: '{"ok": true}'
