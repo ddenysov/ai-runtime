@@ -34,6 +34,7 @@ update: ## Pull latest code and restart containers
 	git pull
 	$(MAKE) down
 	$(MAKE) up
+	$(MAKE) install
 	$(MAKE) npm-build
 	$(MAKE) migrate
 
