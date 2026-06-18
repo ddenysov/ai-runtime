@@ -3,6 +3,7 @@
 namespace App\Channels\Console\Commands;
 
 use App\Channels\Models\AgentChannel;
+use App\Channels\Services\TelegramChannelSettings;
 use App\Channels\Services\TelegramWebhookRegistrar;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
@@ -134,6 +135,12 @@ class TelegramSetWebhookCommand extends Command
             return self::FAILURE;
         }
 
+        if (! $this->option('delete') && TelegramChannelSettings::webhookSecret($settings) === '') {
+            $channel->settings = TelegramChannelSettings::ensureWebhookSecret($settings);
+            $channel->save();
+            $settings = is_array($channel->settings) ? $channel->settings : [];
+        }
+
         $webhookUrl = app(TelegramWebhookRegistrar::class)->webhookUrlFor($channel);
 
         if ($webhookUrl === null) {
@@ -158,9 +165,7 @@ class TelegramSetWebhookCommand extends Command
                 'url' => $webhookUrl,
             ];
 
-            $secret = isset($settings['webhook_secret']) && is_string($settings['webhook_secret'])
-                ? trim($settings['webhook_secret'])
-                : '';
+            $secret = TelegramChannelSettings::webhookSecret($settings);
 
             if ($secret !== '') {
                 $params['secret_token'] = $secret;

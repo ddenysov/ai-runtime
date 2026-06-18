@@ -116,4 +116,84 @@ final class TelegramWebhookMessage
 
         return is_int($updateId) ? $updateId : null;
     }
+
+    public function updateKind(): ?string
+    {
+        foreach ([
+            'message',
+            'edited_message',
+            'callback_query',
+            'inline_query',
+            'chosen_inline_result',
+            'shipping_query',
+            'pre_checkout_query',
+            'poll',
+            'poll_answer',
+            'my_chat_member',
+            'chat_member',
+            'chat_join_request',
+        ] as $key) {
+            if (array_key_exists($key, $this->body)) {
+                return $key;
+            }
+        }
+
+        return null;
+    }
+
+    public function chatId(): ?string
+    {
+        $kind = $this->updateKind();
+
+        if ($kind === null) {
+            return null;
+        }
+
+        $node = $this->body[$kind];
+
+        if (! is_array($node)) {
+            return null;
+        }
+
+        if ($kind === 'callback_query') {
+            $message = $node['message'] ?? null;
+            $chat = is_array($message) ? ($message['chat'] ?? null) : null;
+        } else {
+            $chat = $node['chat'] ?? null;
+        }
+
+        $id = is_array($chat) ? ($chat['id'] ?? null) : null;
+
+        if (is_int($id) || is_float($id)) {
+            return (string) (int) $id;
+        }
+
+        return is_string($id) && trim($id) !== '' ? trim($id) : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function logContext(): array
+    {
+        $context = [
+            'type' => $this->type,
+            'channel_uuid' => $this->channelUuid,
+            'update_id' => $this->updateId(),
+            'update_kind' => $this->updateKind(),
+            'chat_id' => $this->chatId(),
+            'has_secret_token' => $this->secretToken !== '',
+            'body_empty' => $this->body === [],
+        ];
+
+        if ($this->requestId !== '') {
+            $context['request_id'] = $this->requestId;
+        }
+
+        if ($this->receivedAt !== '') {
+            $context['received_at'] = $this->receivedAt;
+        }
+
+        return $context;
+    }
 }

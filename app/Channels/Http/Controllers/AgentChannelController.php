@@ -9,6 +9,7 @@ use App\Channels\Http\Requests\UpdateAgentChannelRequest;
 use App\Channels\Http\Resources\AgentChannelResource;
 use App\Channels\Models\AgentChannel;
 use App\Channels\Models\AgentChannelThread;
+use App\Channels\Services\TelegramChannelSettings;
 use App\Channels\Services\TelegramWebhookRegistrar;
 use App\Gate\TelegramGateClient;
 use App\Http\Controllers\Controller;
@@ -44,13 +45,20 @@ class AgentChannelController extends Controller
     {
         $validated = $request->validated();
 
+        $settings = $request->settingsArray();
+        $type = (string) $validated['type'];
+
+        if ($type === 'telegram') {
+            $settings = TelegramChannelSettings::ensureWebhookSecret($settings);
+        }
+
         $channel = AgentChannel::query()->create([
             'uuid' => (string) Str::uuid(),
             'agent_id' => (int) $validated['agent_id'],
             'name' => (string) $validated['name'],
             'description' => $validated['description'] ?? null,
-            'type' => (string) $validated['type'],
-            'settings' => $request->settingsArray(),
+            'type' => $type,
+            'settings' => $settings,
             'metadata' => $validated['metadata'] ?? null,
             'enabled' => (bool) ($validated['enabled'] ?? true),
             'aggregate_version' => 0,
@@ -103,6 +111,11 @@ class AgentChannelController extends Controller
 
             if ($request->has('enabled')) {
                 $channel->enabled = (bool) $request->validated('enabled');
+            }
+
+            if ($channel->type === 'telegram') {
+                $settings = is_array($channel->settings) ? $channel->settings : [];
+                $channel->settings = TelegramChannelSettings::ensureWebhookSecret($settings);
             }
 
             $channel->aggregate_version = $channel->aggregate_version + 1;

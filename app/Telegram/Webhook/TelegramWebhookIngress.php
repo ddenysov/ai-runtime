@@ -3,6 +3,7 @@
 namespace App\Telegram\Webhook;
 
 use App\Channels\Models\AgentChannel;
+use App\Channels\Services\TelegramChannelSettings;
 use App\Channels\Services\TelegramIncomingMessageHandler;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -16,10 +17,20 @@ final class TelegramWebhookIngress
 
     public function handleMessage(TelegramWebhookMessage $message): TelegramWebhookIngressResult
     {
-        return match ($message->type) {
+        Log::info('Telegram webhook received.', $message->logContext());
+
+        $result = match ($message->type) {
             'agent_channel' => $this->handleAgentChannel($message),
             default => $this->skipUnknownType($message),
         };
+
+        Log::info('Telegram webhook handled.', [
+            ...$message->logContext(),
+            'status' => $result->status->name,
+            'skip_reason' => $result->skipReason?->name,
+        ]);
+
+        return $result;
     }
 
     private function handleAgentChannel(TelegramWebhookMessage $message): TelegramWebhookIngressResult
@@ -62,9 +73,7 @@ final class TelegramWebhookIngress
             return TelegramWebhookIngressResult::skipped(TelegramWebhookSkipReason::MissingBotToken);
         }
 
-        $secret = isset($settings['webhook_secret']) && is_string($settings['webhook_secret'])
-            ? trim($settings['webhook_secret'])
-            : '';
+        $secret = TelegramChannelSettings::webhookSecret($settings);
 
         if ($secret !== '' && ! hash_equals($secret, $message->secretToken)) {
             Log::warning('Telegram webhook skipped: invalid secret token.', [
@@ -76,6 +85,8 @@ final class TelegramWebhookIngress
         }
 
         if ($message->body === []) {
+            Log::warning('Telegram webhook skipped: empty payload.', $message->logContext());
+
             return TelegramWebhookIngressResult::skipped(TelegramWebhookSkipReason::EmptyPayload);
         }
 

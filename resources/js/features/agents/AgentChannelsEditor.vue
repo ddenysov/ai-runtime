@@ -796,13 +796,14 @@ watch(() => props.agentId, loadChannels);
                         />
                     </div>
                     <div class="space-y-2">
-                        <Label for="channel-tg-secret">Webhook secret (optional)</Label>
+                        <Label for="channel-tg-secret">Webhook secret</Label>
                         <Input
                             id="channel-tg-secret"
                             v-model="form.telegram_webhook_secret"
                             type="password"
                             autocomplete="new-password"
                             class="font-mono text-xs"
+                            placeholder="Auto-generated on save if empty"
                         />
                     </div>
                     <div class="space-y-2">

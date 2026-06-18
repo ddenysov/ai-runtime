@@ -65,9 +65,13 @@ final class TelegramWebhookRegistrar
         }
 
         try {
+            $channel = $this->persistWebhookSecretIfMissing($channel);
+
             $api = new Api($botToken);
             $params = ['url' => $webhookUrl];
-            $secret = $this->webhookSecret($channel);
+            $secret = TelegramChannelSettings::webhookSecret(
+                is_array($channel->settings) ? $channel->settings : [],
+            );
 
             if ($secret !== '') {
                 $params['secret_token'] = $secret;
@@ -110,12 +114,21 @@ final class TelegramWebhookRegistrar
             : '';
     }
 
-    private function webhookSecret(AgentChannel $channel): string
+    private function persistWebhookSecretIfMissing(AgentChannel $channel): AgentChannel
     {
+        if ($channel->type !== 'telegram') {
+            return $channel;
+        }
+
         $settings = is_array($channel->settings) ? $channel->settings : [];
 
-        return isset($settings['webhook_secret']) && is_string($settings['webhook_secret'])
-            ? trim($settings['webhook_secret'])
-            : '';
+        if (TelegramChannelSettings::webhookSecret($settings) !== '') {
+            return $channel;
+        }
+
+        $channel->settings = TelegramChannelSettings::ensureWebhookSecret($settings);
+        $channel->save();
+
+        return $channel->refresh();
     }
 }
