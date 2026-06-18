@@ -11,7 +11,7 @@ AWS_REGION ?= eu-central-1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build up down restart update ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook
+.PHONY: help build up down restart update ps logs worker-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook infra-sync-api-stage
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable commands:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -132,9 +132,14 @@ infra-validate: ## Validate SAM template in infra/
 
 infra-deploy: ## Build and deploy AWS webhook stack (API GW + SQS + home IAM user)
 	cd $(INFRA_DIR) && sam build && sam deploy
+	@$(MAKE) infra-sync-api-stage
 
 infra-deploy-guided: ## First-time SAM deploy (interactive; saves samconfig.toml)
 	cd $(INFRA_DIR) && sam build && sam deploy --guided
+	@$(MAKE) infra-sync-api-stage
+
+infra-sync-api-stage: ## Publish latest API definition to Prod stage (after API/integration changes)
+	@sh $(INFRA_DIR)/scripts/publish-api-stage.sh "$(SAM_STACK)"
 
 infra-env: ## Print .env block for home SQS consumer (SAM_STACK=ai-runtime-webhooks)
 	@sh $(INFRA_DIR)/scripts/print-home-env.sh "$(SAM_STACK)"

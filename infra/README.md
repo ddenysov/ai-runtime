@@ -123,6 +123,16 @@ aws cloudformation describe-stacks \
 - Этот ключ **только для SQS poll** на доме, не для `sam deploy`.
 - Отключить автосоздание: `sam deploy --parameter-overrides CreateHomeConsumerUser=false`
 
+## Публикация API на stage Prod
+
+CloudFormation не всегда обновляет snapshot deployment при изменении OpenAPI. После изменений интеграции:
+
+```bash
+make infra-sync-api-stage
+```
+
+`make infra-deploy` вызывает это автоматически.
+
 ## Тест после деплоя
 
 ```bash
@@ -133,8 +143,12 @@ make infra-test-webhook
 
 ```bash
 make infra-test-webhook INFRA_CHANNEL_UUID=your-channel-uuid
-make infra-test-webhook UPDATE_ID=999 AWS_REGION=eu-central-1
+make infra-test-webhook UPDATE_ID=$(date +%s) SQS_WAIT_SECONDS=30
 ```
+
+Скрипт ищет сообщение с нужным `update_id`, старые возвращает в очередь, тестовое удаляет. Показывает `visible` / `in_flight` — если `in_flight > 0`, сообщения временно скрыты после прошлого `receive-message` (до 120 сек).
+
+Для теста используй deploy-credentials (`aws configure`). Если в shell экспортированы ключи из `.env` — сбрось: `unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY`.
 
 Или вручную:
 
