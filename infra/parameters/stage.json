@@ -1,0 +1,8 @@
+{
+  "EnvironmentName": "stage",
+  "QueueName": "ai-runtime-telegram-webhooks-stage",
+  "WafRateLimit": "500",
+  "EnableManagedWafRules": "false",
+  "CreateHomeConsumerUser": "true",
+  "ApiDeploymentRevision": "1"
+}

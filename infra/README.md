@@ -72,6 +72,51 @@ sam build && sam deploy
 sam deploy --config-env prod
 ```
 
+## Stage stack (локальное тестирование)
+
+Отдельный CloudFormation стек — свой API Gateway, SQS, DLQ и IAM user. Prod не затрагивается.
+
+| | Prod | Stage |
+|---|------|-------|
+| Stack name | `ai-runtime-webhooks` | `ai-runtime-webhooks-stage` |
+| Queue | `ai-runtime-telegram-webhooks` | `ai-runtime-telegram-webhooks-stage` |
+| Deploy | `make infra-deploy` | `make infra-deploy-stage` |
+| `.env` block | `make infra-env` | `make infra-env-stage` |
+| Smoke test | `make infra-test-webhook` | `make infra-test-webhook-stage` |
+
+Первый деплой stage:
+
+```bash
+make infra-deploy-guided-stage
+```
+
+При `--guided` укажите stack name `ai-runtime-webhooks-stage` (или используйте `make infra-deploy-stage` после сохранения `samconfig.toml`).
+
+Повторный деплой:
+
+```bash
+make infra-deploy-stage
+```
+
+Параметры stage: `infra/parameters/stage.json` (`WafRateLimit=500`, отдельная очередь).
+
+### Локальный workflow
+
+1. Задеплоить stage: `make infra-deploy-stage`
+2. Скопировать в `.env`: `make infra-env-stage`
+3. Убедиться: `TELEGRAM_WEBHOOK_INGRESS=sqs`, `TELEGRAM_WEBHOOK_HTTP_ENABLED=false`
+4. Пересоздать consumer: `docker compose up -d telegram-webhook-consumer --force-recreate`
+5. Перерегистрировать webhooks на stage URL: `make telegram-set-webhook-all`
+6. Проверить: `make infra-test-webhook-stage`
+
+Удаление stage-стека (prod остаётся):
+
+```bash
+sam delete --stack-name ai-runtime-webhooks-stage
+```
+
+**Важно:** не смешивай prod и stage credentials в `.env`. Для `sam deploy` и `make infra-test-webhook*` используй deploy-credentials (`aws configure`), не home-consumer ключ из `.env`.
+
 ## Outputs после деплоя
 
 ```bash
@@ -214,6 +259,12 @@ Override:
 
 ```bash
 sam deploy --parameter-overrides WafRateLimit=2000 EnableManagedWafRules=true
+```
+
+Stage override (или `make infra-deploy-stage`):
+
+```bash
+sam deploy --config-env stage
 ```
 
 ## Удаление стека

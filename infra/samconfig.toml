@@ -26,3 +26,16 @@ confirm_changeset = true
 resolve_s3 = true
 region = "eu-central-1"
 parameter_overrides = "EnvironmentName=prod QueueName=ai-runtime-telegram-webhooks WafRateLimit=1000 EnableManagedWafRules=false CreateHomeConsumerUser=true ApiDeploymentRevision=3"
+
+[stage.global.parameters]
+stack_name = "ai-runtime-webhooks-stage"
+
+[stage.deploy.parameters]
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+confirm_changeset = true
+resolve_s3 = true
+region = "eu-central-1"
+parameter_overrides = "EnvironmentName=\"stage\" QueueName=\"ai-runtime-telegram-webhooks-stage\" WafRateLimit=\"500\" EnableManagedWafRules=\"false\" CreateHomeConsumerUser=\"true\" ApiDeploymentRevision=\"1\""
+s3_prefix = "ai-runtime-webhooks-stage"
+disable_rollback = true
+image_repositories = []

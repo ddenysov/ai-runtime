@@ -7,12 +7,13 @@ COMPOSE := docker compose
 
 INFRA_DIR := infra
 SAM_STACK ?= ai-runtime-webhooks
+SAM_STACK_STAGE ?= ai-runtime-webhooks-stage
 INFRA_CHANNEL_UUID ?= 550e8400-e29b-41d4-a716-446655440000
 AWS_REGION ?= eu-central-1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build up down restart update backup restore backup-list ps logs worker-logs consumer-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-env infra-test-webhook infra-sync-api-stage
+.PHONY: help build up down restart update backup restore backup-list ps logs worker-logs consumer-logs shell root composer npm npm-dev npm-build artisan migrate migrate-fresh test pint install setup mcp-demo ngrok ngrok-stop ngrok-sync-env ngrok-tg tg telegram-set-webhook telegram-delete-webhook telegram-set-webhook-all telegram-delete-webhook-all infra-validate infra-deploy infra-deploy-guided infra-deploy-stage infra-deploy-guided-stage infra-env infra-env-stage infra-test-webhook infra-test-webhook-stage infra-sync-api-stage
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*##"; printf "\nAvailable commands:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  make %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -154,12 +155,27 @@ infra-deploy-guided: ## First-time SAM deploy (interactive; saves samconfig.toml
 	cd $(INFRA_DIR) && sam build && sam deploy --guided
 	@$(MAKE) infra-sync-api-stage
 
+infra-deploy-stage: ## Build and deploy stage webhook stack (isolated from prod)
+	cd $(INFRA_DIR) && sam build && sam deploy --config-env stage
+	@$(MAKE) infra-sync-api-stage SAM_STACK=$(SAM_STACK_STAGE)
+
+infra-deploy-guided-stage: ## First-time stage SAM deploy (interactive)
+	cd $(INFRA_DIR) && sam build && sam deploy --guided --config-env stage
+	@$(MAKE) infra-sync-api-stage SAM_STACK=$(SAM_STACK_STAGE)
+
 infra-sync-api-stage: ## Publish latest API definition to Prod stage (after API/integration changes)
 	@sh $(INFRA_DIR)/scripts/publish-api-stage.sh "$(SAM_STACK)"
 
 infra-env: ## Print .env block for home SQS consumer (SAM_STACK=ai-runtime-webhooks)
 	@sh $(INFRA_DIR)/scripts/print-home-env.sh "$(SAM_STACK)"
 
+infra-env-stage: ## Print .env block for stage stack (local testing)
+	@sh $(INFRA_DIR)/scripts/print-home-env.sh "$(SAM_STACK_STAGE)"
+
 infra-test-webhook: ## POST test webhook to API GW and read one message from SQS
 	@AWS_DEFAULT_REGION="$(AWS_REGION)" UPDATE_ID="$(UPDATE_ID)" \
 		sh $(INFRA_DIR)/scripts/test-webhook.sh "$(SAM_STACK)" "$(INFRA_CHANNEL_UUID)"
+
+infra-test-webhook-stage: ## POST test webhook to stage API GW and read one message from SQS
+	@AWS_DEFAULT_REGION="$(AWS_REGION)" UPDATE_ID="$(UPDATE_ID)" \
+		sh $(INFRA_DIR)/scripts/test-webhook.sh "$(SAM_STACK_STAGE)" "$(INFRA_CHANNEL_UUID)"
