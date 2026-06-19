@@ -81,6 +81,38 @@ const groupedTools = computed(() => {
 
 const enabledCount = computed(() => draftTools.value.filter((tool) => tool.is_enabled).length);
 
+const allToolsEnabled = computed(() => (
+    draftTools.value.length > 0 && draftTools.value.every((tool) => tool.is_enabled)
+));
+
+function groupEnabledCount(group) {
+    return group.items.filter((item) => item.tool.is_enabled).length;
+}
+
+function isGroupFullyEnabled(group) {
+    return group.items.length > 0 && groupEnabledCount(group) === group.items.length;
+}
+
+function setToolsEnabled(slugs, enabled) {
+    const slugSet = new Set(slugs);
+
+    for (const tool of draftTools.value) {
+        if (slugSet.has(tool.slug)) {
+            tool.is_enabled = enabled;
+        }
+    }
+}
+
+function setAllToolsEnabled(enabled) {
+    for (const tool of draftTools.value) {
+        tool.is_enabled = enabled;
+    }
+}
+
+function setGroupToolsEnabled(group, enabled) {
+    setToolsEnabled(group.items.map((item) => item.tool.slug), enabled);
+}
+
 function findDraftTool(slug) {
     return draftTools.value.find((tool) => tool.slug === slug);
 }
@@ -310,17 +342,70 @@ async function saveTools() {
                 </p>
             </div>
 
+            <div
+                v-if="draftTools.length"
+                class="flex flex-wrap items-center justify-between gap-3"
+            >
+                <p class="text-sm font-medium">Runtime tools</p>
+                <div class="flex flex-wrap items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        class="app-soft-control"
+                        :disabled="saving || allToolsEnabled"
+                        @click="setAllToolsEnabled(true)"
+                    >
+                        Select all
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        class="app-soft-control"
+                        :disabled="saving || enabledCount === 0"
+                        @click="setAllToolsEnabled(false)"
+                    >
+                        Deselect all
+                    </Button>
+                </div>
+            </div>
+
             <div class="space-y-4">
                 <div
                     v-for="group in groupedTools"
                     :key="group.name"
                     class="space-y-3"
                 >
-                    <div class="flex items-center gap-2">
-                        <p class="text-sm font-medium">{{ group.name }}</p>
-                        <Badge variant="outline" class="rounded-full">
-                            {{ group.items.length }}
-                        </Badge>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                            <p class="text-sm font-medium">{{ group.name }}</p>
+                            <Badge variant="outline" class="rounded-full">
+                                {{ groupEnabledCount(group) }} / {{ group.items.length }}
+                            </Badge>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                class="app-soft-control h-7 px-2 text-xs"
+                                :disabled="saving || isGroupFullyEnabled(group)"
+                                @click="setGroupToolsEnabled(group, true)"
+                            >
+                                Select all
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                class="app-soft-control h-7 px-2 text-xs"
+                                :disabled="saving || groupEnabledCount(group) === 0"
+                                @click="setGroupToolsEnabled(group, false)"
+                            >
+                                Deselect all
+                            </Button>
+                        </div>
                     </div>
                     <div class="grid gap-3 md:grid-cols-2">
                         <div

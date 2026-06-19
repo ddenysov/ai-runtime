@@ -4,9 +4,8 @@ namespace App\Neuron\Tools;
 
 use App\Mcp\Models\McpServer;
 use App\Mcp\Services\McpStdioToolExecutor;
-use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
-use NeuronAI\Tools\ToolProperty;
+use NeuronAI\Tools\ToolPropertyInterface;
 
 class McpServerTool extends Tool
 {
@@ -26,7 +25,7 @@ class McpServerTool extends Tool
     }
 
     /**
-     * @return array<int, ToolProperty>
+     * @return array<int, ToolPropertyInterface>
      */
     protected function properties(): array
     {
@@ -35,38 +34,7 @@ class McpServerTool extends Tool
             return [];
         }
 
-        $properties = $schema['properties'] ?? [];
-        if (! is_array($properties)) {
-            return [];
-        }
-
-        $required = $schema['required'] ?? [];
-        $required = is_array($required) ? $required : [];
-
-        $toolProperties = [];
-        foreach ($properties as $name => $propertySchema) {
-            if (! is_string($name) || ! is_array($propertySchema)) {
-                continue;
-            }
-
-            $type = $this->propertyType($propertySchema['type'] ?? 'string');
-            if (! $type instanceof PropertyType) {
-                continue;
-            }
-
-            $enum = $propertySchema['enum'] ?? [];
-            $toolProperties[] = ToolProperty::make(
-                name: $name,
-                type: $type,
-                description: is_string($propertySchema['description'] ?? null)
-                    ? $propertySchema['description']
-                    : null,
-                required: in_array($name, $required, true),
-                enum: is_array($enum) ? array_values($enum) : [],
-            );
-        }
-
-        return $toolProperties;
+        return app(McpInputSchemaPropertyMapper::class)->mapProperties($schema);
     }
 
     public function __invoke(mixed ...$arguments): string
@@ -103,26 +71,5 @@ class McpServerTool extends Tool
         }
 
         return "Call the {$toolName} MCP tool on {$server->name}.";
-    }
-
-    private function propertyType(mixed $type): ?PropertyType
-    {
-        if (is_array($type)) {
-            $type = collect($type)
-                ->first(fn (mixed $candidate): bool => is_string($candidate) && $candidate !== 'null');
-        }
-
-        if (! is_string($type)) {
-            return PropertyType::STRING;
-        }
-
-        return match ($type) {
-            'integer' => PropertyType::INTEGER,
-            'number' => PropertyType::NUMBER,
-            'boolean' => PropertyType::BOOLEAN,
-            'array' => PropertyType::ARRAY,
-            'object' => PropertyType::OBJECT,
-            default => PropertyType::STRING,
-        };
     }
 }

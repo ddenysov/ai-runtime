@@ -7,13 +7,12 @@ services:
     ports:
       - "${VITE_PORT:-5173}:5173"
     environment:
-      UV_CACHE_DIR: /tmp/uv-cache
+      UV_CACHE_DIR: /var/www/html/storage/uv-cache
       DB_HOST: postgres
       DB_PORT: 5432
     volumes:
       - .:/var/www/html
       - node_modules:/var/www/html/node_modules
-      - uv_cache:/tmp/uv-cache
     env_file:
       - .env
     depends_on:
@@ -28,13 +27,12 @@ services:
     restart: unless-stopped
     command: php artisan queue:listen --sleep=3 --tries=3 --timeout=90
     environment:
-      UV_CACHE_DIR: /tmp/uv-cache
+      UV_CACHE_DIR: /var/www/html/storage/uv-cache
       DB_HOST: postgres
       DB_PORT: 5432
     volumes:
       - .:/var/www/html
       - node_modules:/var/www/html/node_modules
-      - uv_cache:/tmp/uv-cache
     env_file:
       - .env
     depends_on:
@@ -49,13 +47,12 @@ services:
     restart: unless-stopped
     command: php artisan schedule:work
     environment:
-      UV_CACHE_DIR: /tmp/uv-cache
+      UV_CACHE_DIR: /var/www/html/storage/uv-cache
       DB_HOST: postgres
       DB_PORT: 5432
     volumes:
       - .:/var/www/html
       - node_modules:/var/www/html/node_modules
-      - uv_cache:/tmp/uv-cache
     env_file:
       - .env
     depends_on:
@@ -70,13 +67,12 @@ services:
     restart: unless-stopped
     command: php artisan telegram:consume-webhooks -v
     environment:
-      UV_CACHE_DIR: /tmp/uv-cache
+      UV_CACHE_DIR: /var/www/html/storage/uv-cache
       DB_HOST: postgres
       DB_PORT: 5432
     volumes:
       - .:/var/www/html
       - node_modules:/var/www/html/node_modules
-      - uv_cache:/tmp/uv-cache
     env_file:
       - .env
     depends_on:
@@ -142,4 +138,3 @@ volumes:
   postgres_data:
   pgadmin_data:
   node_modules:
-  uv_cache:
