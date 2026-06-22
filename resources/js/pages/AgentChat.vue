@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { agentChatEventsUrl, getAgent, getAgentChatHistory, sendAgentChatMessage } from '@/lib/api';
+import { randomUuid } from '@/lib/utils';
 import {
     navigation,
     workspaces,
@@ -53,7 +54,7 @@ const draft = ref('');
 const messages = ref([]);
 const activeRunId = ref('');
 const activeRunActivity = ref([]);
-const chatContextId = ref(props.contextId || crypto.randomUUID());
+const chatContextId = ref(props.contextId || randomUuid());
 const streamStatus = ref('Idle');
 const messagesPanel = ref(null);
 const lastFailedUserMessageId = ref('');
@@ -160,8 +161,8 @@ async function sendChatContent(content, existingUserMessage = null, options = {}
         return;
     }
 
-    const userMessageId = existingUserMessage?.id ?? crypto.randomUUID();
-    const assistantMessageId = crypto.randomUUID();
+    const userMessageId = existingUserMessage?.id ?? randomUuid();
+    const assistantMessageId = randomUuid();
     const previousUserMessageContent = existingUserMessage?.content;
     const previousUserMessageCreatedAt = existingUserMessage?.createdAt;
     sending.value = true;
@@ -462,7 +463,7 @@ function normalizeRunActivity(activity = []) {
 
     return activity
         .map((item) => ({
-            id: item.id ?? crypto.randomUUID(),
+            id: item.id ?? randomUuid(),
             type: item.type ?? 'event',
             title: item.title ?? 'Activity updated',
             status: item.status ? formatState(item.status) : '',
@@ -576,7 +577,7 @@ watch(() => props.agentId, () => {
     lastFailedUserMessageId.value = '';
     editingRetryMessageId.value = '';
     retryDraft.value = '';
-    chatContextId.value = props.contextId || crypto.randomUUID();
+    chatContextId.value = props.contextId || randomUuid();
     streamStatus.value = 'Idle';
     fetchAgent();
     fetchChatHistory();
