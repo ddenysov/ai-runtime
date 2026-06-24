@@ -799,7 +799,7 @@ onBeforeUnmount(closeStream);
                                     >
                                         <Textarea
                                             v-model="retryDraft"
-                                            class="min-h-20 resize-none rounded-app-control"
+                                            class="field-sizing-fixed min-h-20 max-h-48 resize-none overflow-y-auto rounded-app-control"
                                             :disabled="sending"
                                         />
                                         <div class="mt-2 flex justify-end gap-2">
@@ -836,7 +836,7 @@ onBeforeUnmount(closeStream);
                     <form class="shrink-0 border-t p-4 md:p-5" @submit.prevent="submitMessage">
                         <Textarea
                             v-model="draft"
-                            class="min-h-24 resize-none rounded-app-control"
+                            class="field-sizing-fixed min-h-24 max-h-48 resize-none overflow-y-auto rounded-app-control"
                             placeholder="Ask the agent..."
                             :disabled="!agent || sending"
                             @keydown="handleComposerKeydown"
