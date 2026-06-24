@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { PlusIcon } from '@lucide/vue';
+import { useRouter } from 'vue-router';
+import { MessagesSquareIcon, PlusIcon } from '@lucide/vue';
 import AppShell from '@/components/app/AppShell.vue';
 import PageBreadcrumbs from '@/components/app/PageBreadcrumbs.vue';
 import PageHeader from '@/components/app/PageHeader.vue';
@@ -15,6 +16,7 @@ import {
 const selectedWorkspace = ref('acme-ai');
 const createAgentOpen = ref(false);
 const agentsRegistry = ref(null);
+const router = useRouter();
 const agentNavigation = computed(() => navigation.map((item) => ({
     ...item,
     active: item.label === 'Agents',
@@ -37,6 +39,14 @@ function refreshAgents() {
             </template>
 
             <template #actions>
+                <Button
+                    variant="outline"
+                    class="app-soft-control"
+                    @click="router.push({ name: 'agent-conversations' })"
+                >
+                    <MessagesSquareIcon class="size-4" />
+                    Conversations
+                </Button>
                 <Button
                     class="rounded-app-control"
                     @click="createAgentOpen = true"

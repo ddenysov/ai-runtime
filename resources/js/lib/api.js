@@ -518,3 +518,36 @@ export function runAgentScheduleNow(uuid) {
         method: 'POST',
     });
 }
+
+export function listAgentConversations({
+    search,
+    page,
+    perPage,
+} = {}) {
+    const params = new URLSearchParams();
+
+    appendQueryParam(params, 'filter[search]', search);
+    appendQueryParam(params, 'page', page);
+    appendQueryParam(params, 'per_page', perPage);
+
+    const query = params.toString();
+
+    return apiFetch(`/api/agent-conversations${query ? `?${query}` : ''}`);
+}
+
+export function createAgentConversation(payload) {
+    return apiFetch('/api/agent-conversations', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export function getAgentConversation(id) {
+    return apiFetch(`/api/agent-conversations/${encodeURIComponent(id)}`);
+}
+
+export function advanceAgentConversation(id) {
+    return apiFetch(`/api/agent-conversations/${encodeURIComponent(id)}/advance`, {
+        method: 'POST',
+    });
+}

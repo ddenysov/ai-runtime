@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import AgentChat from '@/pages/AgentChat.vue';
 import AgentChatHistory from '@/pages/AgentChatHistory.vue';
+import AgentConversation from '@/pages/AgentConversation.vue';
+import AgentConversations from '@/pages/AgentConversations.vue';
 import AgentDetails from '@/pages/AgentDetails.vue';
 import Agents from '@/pages/Agents.vue';
 import Index from '@/pages/Index.vue';
@@ -26,6 +28,23 @@ const routes = [
         path: '/agents',
         name: 'agents',
         component: Agents,
+    },
+    {
+        path: '/conversations',
+        name: 'agent-conversations',
+        component: AgentConversations,
+    },
+    {
+        path: '/conversations/new',
+        name: 'agent-conversation-new',
+        component: AgentConversation,
+        props: { conversationId: 'new' },
+    },
+    {
+        path: '/conversations/:conversationId',
+        name: 'agent-conversation',
+        component: AgentConversation,
+        props: true,
     },
     {
         path: '/agents/:agentId',

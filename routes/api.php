@@ -7,6 +7,7 @@ use App\Channels\Http\Controllers\AgentChannelController;
 use App\Channels\Http\Controllers\TelegramAgentWebhookController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
+use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentInstructionsGeneratorController;
 use App\Http\Controllers\AgentScheduleController;
 use App\Http\Controllers\AgentStateProcessorController;
@@ -43,6 +44,11 @@ Route::middleware('web')->group(function (): void {
         Route::post('/agent-channels/{agentChannel}/telegram/webhook', [AgentChannelController::class, 'setTelegramWebhook']);
         Route::delete('/agent-channels/{agentChannel}/telegram/webhook', [AgentChannelController::class, 'deleteTelegramWebhook']);
         Route::post('/agent-channels/{agentChannel}/telegram/test', [AgentChannelController::class, 'testTelegram']);
+
+        Route::get('/agent-conversations', [AgentConversationController::class, 'index']);
+        Route::post('/agent-conversations', [AgentConversationController::class, 'store']);
+        Route::get('/agent-conversations/{agentConversation}', [AgentConversationController::class, 'show']);
+        Route::post('/agent-conversations/{agentConversation}/advance', [AgentConversationController::class, 'advance']);
 
         Route::get('/agents', [AgentController::class, 'index']);
         Route::post('/agents', [AgentController::class, 'store']);
